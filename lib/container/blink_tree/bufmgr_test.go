@@ -34,12 +34,13 @@ func TestNewBufMgr(t *testing.T) {
 				t.Errorf("NewBufMgr() failed")
 			}
 			page := Page{}
+			page_ := &page
 			for i := 0; i < 3; i++ {
-				if err := mgr.ReadPage(&page, Uid(i)); err != BLTErrOk {
+				if err := mgr.ReadPage(&page_, Uid(i)); err != BLTErrOk {
 					t.Errorf("NewBufMgr() failed to read page. err: %v", err)
 				}
 			}
-			if err := mgr.ReadPage(&page, Uid(3)); err != BLTErrRead {
+			if err := mgr.ReadPage(&page_, Uid(3)); err != BLTErrRead {
 				t.Errorf("NewBufMgr() failed to read page with unexpected err: %v", err)
 			}
 		})

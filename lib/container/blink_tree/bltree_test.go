@@ -72,9 +72,9 @@ func TestBLTree_insert_and_find_samehada(t *testing.T) {
 	poolSize := uint32(10)
 
 	dm := disk.NewDiskManagerTest()
-	_ = buffer.NewBufferPoolManager(poolSize, dm)
+	bpm := buffer.NewBufferPoolManager(poolSize, dm)
 
-	mgr := NewBufMgr("data/bltree_insert_and_find.db", 13, 20)
+	mgr := NewBufMgrSamehada("data/bltree_insert_and_find.db", 12, 4, bpm)
 	bltree := NewBLTree(mgr)
 	if valLen, _, _ := bltree.findKey([]byte{1, 1, 1, 1}, BtId); valLen >= 0 {
 		t.Errorf("findKey() = %v, want %v", valLen, -1)
