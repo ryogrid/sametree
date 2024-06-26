@@ -193,13 +193,13 @@ func (p *Page) FindSlot(key []byte) uint32 {
 	}
 }
 
-func PutID(dest *[BtId]uint8, id uid) {
+func PutID(dest *[BtId]uint8, id Uid) {
 	for i := range dest {
 		dest[BtId-i-1] = uint8(id >> (8 * i))
 	}
 }
 
-func GetIDFromValue(src *[]uint8) uid {
+func GetIDFromValue(src *[]uint8) Uid {
 	if len(*src) < BtId {
 		return 0
 	}
@@ -208,11 +208,11 @@ func GetIDFromValue(src *[]uint8) uid {
 	return GetID(&ret)
 }
 
-func GetID(src *[BtId]uint8) uid {
-	var id uid = 0
+func GetID(src *[BtId]uint8) Uid {
+	var id Uid = 0
 	for i := range src {
 		id <<= 8
-		id |= uid(src[i])
+		id |= Uid(src[i])
 	}
 	return id
 }

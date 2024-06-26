@@ -14,7 +14,7 @@ type (
 		dups  uint64      // global duplicate key unique id
 		chain [BtId]uint8 // head of free page_nos chain
 	}
-	BufMgr struct {
+	BufMgrOrgImpl struct {
 		pageSize     uint32 // page size
 		pageBits     uint8  // page size in bits
 		pageDataSize uint32 // page data size
@@ -40,12 +40,12 @@ func (z *PageZero) AllocRight() *[BtId]byte {
 	return (*[6]byte)(z.alloc[rightStart : rightStart+6])
 }
 
-func (z *PageZero) SetAllocRight(pageNo uid) {
+func (z *PageZero) SetAllocRight(pageNo Uid) {
 	PutID(z.AllocRight(), pageNo)
 }
 
 // NewBufMgr creates a new buffer manager
-func NewBufMgr(name string, bits uint8, nodeMax uint) *BufMgr {
+func NewBufMgr(name string, bits uint8, nodeMax uint) BufMgr {
 	initit := true
 
 	// determine sanity of page size
@@ -63,14 +63,14 @@ func NewBufMgr(name string, bits uint8, nodeMax uint) *BufMgr {
 
 	var err error
 
-	mgr := BufMgr{}
+	mgr := BufMgrOrgImpl{}
 	mgr.idx, err = os.OpenFile(name, os.O_RDWR|os.O_CREATE, 0666)
 	if err != nil {
 		errPrintf("Unable to open btree file: %v\n", err)
 		return nil
 	}
 
-	// data to map to BufMgr::pageZero.alloc
+	// data to map to BufMgrOrgImpl::pageZero.alloc
 	var pageZeroBytes []byte
 
 	// read minimum page size to get root info
@@ -112,13 +112,13 @@ func NewBufMgr(name string, bits uint8, nodeMax uint) *BufMgr {
 		alloc.Bits = mgr.pageBits
 		PutID(&alloc.Right, MinLvl+1)
 
-		if mgr.writePage(alloc, 0) != BLTErrOk {
+		if mgr.WritePage(alloc, 0) != BLTErrOk {
 			errPrintf("Unable to create btree page zero\n")
 			mgr.Close()
 			return nil
 		}
 
-		// store page zero data to map to BufMgr::pageZero.alloc
+		// store page zero data to map to BufMgrOrgImpl::pageZero.alloc
 		buf := bytes.NewBuffer(make([]byte, 0, mgr.pageSize))
 		if err2 := binary.Write(buf, binary.LittleEndian, alloc.PageHeader); err2 != nil {
 			errPrintf("Unable to output page header as bytes: %v\n", err2)
@@ -139,7 +139,7 @@ func NewBufMgr(name string, bits uint8, nodeMax uint) *BufMgr {
 
 			if lvl > 0 {
 				var value [BtId]byte
-				PutID(&value, uid(MinLvl-lvl+1))
+				PutID(&value, Uid(MinLvl-lvl+1))
 				alloc.SetValue(value[:], 1)
 			} else {
 				alloc.SetValue([]byte{}, 1)
@@ -150,7 +150,7 @@ func NewBufMgr(name string, bits uint8, nodeMax uint) *BufMgr {
 			alloc.Cnt = 1
 			alloc.Act = 1
 
-			if err := mgr.writePage(alloc, uid(MinLvl-lvl)); err != BLTErrOk {
+			if err := mgr.WritePage(alloc, Uid(MinLvl-lvl)); err != BLTErrOk {
 				errPrintf("Unable to create btree page zero\n")
 				return nil
 			}
@@ -179,7 +179,7 @@ func NewBufMgr(name string, bits uint8, nodeMax uint) *BufMgr {
 	return &mgr
 }
 
-func (mgr *BufMgr) readPage(page *Page, pageNo uid) BLTErr {
+func (mgr *BufMgrOrgImpl) ReadPage(page *Page, pageNo Uid) BLTErr {
 	off := pageNo << mgr.pageBits
 
 	pageBytes := make([]byte, mgr.pageSize)
@@ -199,7 +199,7 @@ func (mgr *BufMgr) readPage(page *Page, pageNo uid) BLTErr {
 
 // writePage writes a page to permanent location in BLTree file,
 // and clear the dirty bit (← clear していない...)
-func (mgr *BufMgr) writePage(page *Page, pageNo uid) BLTErr {
+func (mgr *BufMgrOrgImpl) WritePage(page *Page, pageNo Uid) BLTErr {
 	off := pageNo << mgr.pageBits
 	// write page to disk as []byte
 	buf := bytes.NewBuffer(make([]byte, 0, mgr.pageSize))
@@ -225,14 +225,14 @@ func (mgr *BufMgr) writePage(page *Page, pageNo uid) BLTErr {
 // Close
 //
 // flush dirty pool pages to the btree and close the btree file
-func (mgr *BufMgr) Close() {
+func (mgr *BufMgrOrgImpl) Close() {
 	num := 0
 
 	// flush page 0
 	pageZero := NewPage(mgr.pageDataSize)
 	pageZero.PageHeader.Right = *mgr.pageZero.AllocRight()
 	pageZero.PageHeader.Bits = mgr.pageBits
-	mgr.writePage(pageZero, 0)
+	mgr.WritePage(pageZero, 0)
 
 	// flush dirty pool pages to the btree
 	var slot uint32
@@ -241,7 +241,7 @@ func (mgr *BufMgr) Close() {
 		latch := &mgr.latchSets[slot]
 
 		if latch.dirty {
-			mgr.writePage(page, latch.pageNo)
+			mgr.WritePage(page, latch.pageNo)
 			latch.dirty = false
 			num++
 		}
@@ -259,7 +259,7 @@ func (mgr *BufMgr) Close() {
 }
 
 // poolAudit
-func (mgr *BufMgr) poolAudit() {
+func (mgr *BufMgrOrgImpl) PoolAudit() {
 	var slot uint32
 	for slot = 0; slot <= mgr.latchDeployed; slot++ {
 		latch := mgr.latchSets[slot]
@@ -287,7 +287,7 @@ func (mgr *BufMgr) poolAudit() {
 }
 
 // latchLink
-func (mgr *BufMgr) latchLink(hashIdx uint, slot uint, pageNo uid, loadIt bool, reads *uint) BLTErr {
+func (mgr *BufMgrOrgImpl) LatchLink(hashIdx uint, slot uint, pageNo Uid, loadIt bool, reads *uint) BLTErr {
 	page := &mgr.pagePool[slot]
 	latch := &mgr.latchSets[slot]
 
@@ -309,7 +309,7 @@ func (mgr *BufMgr) latchLink(hashIdx uint, slot uint, pageNo uid, loadIt bool, r
 	latch.pin = 1
 
 	if loadIt {
-		if mgr.err = mgr.readPage(page, pageNo); mgr.err != BLTErrOk {
+		if mgr.err = mgr.ReadPage(page, pageNo); mgr.err != BLTErrOk {
 			return mgr.err
 		}
 		*reads++
@@ -320,12 +320,12 @@ func (mgr *BufMgr) latchLink(hashIdx uint, slot uint, pageNo uid, loadIt bool, r
 }
 
 // MapPage maps a page from the buffer pool
-func (mgr *BufMgr) MapPage(latch *LatchSet) *Page {
+func (mgr *BufMgrOrgImpl) MapPage(latch *LatchSet) *Page {
 	return &mgr.pagePool[latch.entry]
 }
 
 // PinLatch pins a page in the buffer pool
-func (mgr *BufMgr) PinLatch(pageNo uid, loadIt bool, reads *uint, writes *uint) *LatchSet {
+func (mgr *BufMgrOrgImpl) PinLatch(pageNo Uid, loadIt bool, reads *uint, writes *uint) *LatchSet {
 	hashIdx := uint(pageNo) % mgr.latchHash
 
 	// try to find our entry
@@ -354,7 +354,7 @@ func (mgr *BufMgr) PinLatch(pageNo uid, loadIt bool, reads *uint, writes *uint) 
 	slot = uint(atomic.AddUint32(&mgr.latchDeployed, 1))
 	if slot < mgr.latchTotal {
 		latch := &mgr.latchSets[slot]
-		if mgr.latchLink(hashIdx, slot, pageNo, loadIt, reads) != BLTErrOk {
+		if mgr.LatchLink(hashIdx, slot, pageNo, loadIt, reads) != BLTErrOk {
 			return nil
 		}
 
@@ -397,7 +397,7 @@ func (mgr *BufMgr) PinLatch(pageNo uid, loadIt bool, reads *uint, writes *uint) 
 		page := mgr.pagePool[slot]
 
 		if latch.dirty {
-			if err := mgr.writePage(&page, latch.pageNo); err != BLTErrOk {
+			if err := mgr.WritePage(&page, latch.pageNo); err != BLTErrOk {
 				return nil
 			} else {
 				latch.dirty = false
@@ -416,7 +416,7 @@ func (mgr *BufMgr) PinLatch(pageNo uid, loadIt bool, reads *uint, writes *uint) 
 			mgr.latchSets[latch.next].prev = latch.prev
 		}
 
-		if mgr.latchLink(hashIdx, slot, pageNo, loadIt, reads) != BLTErrOk {
+		if mgr.LatchLink(hashIdx, slot, pageNo, loadIt, reads) != BLTErrOk {
 			mgr.hashTable[idx].latch.SpinReleaseWrite()
 			return nil
 		}
@@ -427,7 +427,7 @@ func (mgr *BufMgr) PinLatch(pageNo uid, loadIt bool, reads *uint, writes *uint) 
 }
 
 // UnpinLatch unpins a page in the buffer pool
-func (mgr *BufMgr) UnpinLatch(latch *LatchSet) {
+func (mgr *BufMgrOrgImpl) UnpinLatch(latch *LatchSet) {
 	if ^latch.pin&ClockBit > 0 {
 		FetchAndOrUint32(&latch.pin, ClockBit)
 	}
@@ -436,7 +436,7 @@ func (mgr *BufMgr) UnpinLatch(latch *LatchSet) {
 
 // NewPage allocate a new page
 // returns the page with latched but unlocked
-func (mgr *BufMgr) NewPage(set *PageSet, contents *Page, reads *uint, writes *uint) BLTErr {
+func (mgr *BufMgrOrgImpl) NewPage(set *PageSet, contents *Page, reads *uint, writes *uint) BLTErr {
 	// lock allocation page
 	mgr.lock.SpinWriteLock()
 
@@ -483,9 +483,9 @@ func (mgr *BufMgr) NewPage(set *PageSet, contents *Page, reads *uint, writes *ui
 }
 
 // LoadPage find and load page at given level for given key leave page read or write locked as requested
-func (mgr *BufMgr) LoadPage(set *PageSet, key []byte, lvl uint8, lock BLTLockMode, reads *uint, writes *uint) uint32 {
+func (mgr *BufMgrOrgImpl) LoadPage(set *PageSet, key []byte, lvl uint8, lock BLTLockMode, reads *uint, writes *uint) uint32 {
 	pageNo := RootPage
-	prevPage := uid(0)
+	prevPage := Uid(0)
 	drill := uint8(0xff)
 	var slot uint32
 	var prevLatch *LatchSet
@@ -518,7 +518,7 @@ func (mgr *BufMgr) LoadPage(set *PageSet, key []byte, lvl uint8, lock BLTLockMod
 		if prevPage > 0 {
 			mgr.UnlockPage(prevMode, prevLatch)
 			mgr.UnpinLatch(prevLatch)
-			prevPage = uid(0)
+			prevPage = Uid(0)
 		}
 
 		// skip Atomic lock on leaf page if already held
@@ -607,7 +607,7 @@ func (mgr *BufMgr) LoadPage(set *PageSet, key []byte, lvl uint8, lock BLTLockMod
 //
 // return page to free list
 // page must be delete and write locked
-func (mgr *BufMgr) FreePage(set *PageSet) {
+func (mgr *BufMgrOrgImpl) FreePage(set *PageSet) {
 
 	// lock allocation page
 	mgr.lock.SpinWriteLock()
@@ -630,7 +630,7 @@ func (mgr *BufMgr) FreePage(set *PageSet) {
 // LockPage
 //
 // place write, read, or parent lock on requested page_no
-func (mgr *BufMgr) LockPage(mode BLTLockMode, latch *LatchSet) {
+func (mgr *BufMgrOrgImpl) LockPage(mode BLTLockMode, latch *LatchSet) {
 	switch mode {
 	case LockRead:
 		latch.readWr.ReadLock()
@@ -646,7 +646,7 @@ func (mgr *BufMgr) LockPage(mode BLTLockMode, latch *LatchSet) {
 	}
 }
 
-func (mgr *BufMgr) UnlockPage(mode BLTLockMode, latch *LatchSet) {
+func (mgr *BufMgrOrgImpl) UnlockPage(mode BLTLockMode, latch *LatchSet) {
 	switch mode {
 	case LockRead:
 		latch.readWr.ReadRelease()
@@ -660,5 +660,20 @@ func (mgr *BufMgr) UnlockPage(mode BLTLockMode, latch *LatchSet) {
 		latch.parent.WriteRelease()
 		//case LockAtomic: // Note: not supported in this golang implementation
 	}
+}
 
+func (mgr *BufMgrOrgImpl) GetPageDataSize() uint32 {
+	return mgr.pageDataSize
+}
+func (mgr *BufMgrOrgImpl) GetLatchSets() []LatchSet {
+	return mgr.latchSets
+}
+func (mgr *BufMgrOrgImpl) GetPageBits() uint8 {
+	return mgr.pageBits
+}
+func (mgr *BufMgrOrgImpl) GetPageZero() *PageZero {
+	return &mgr.pageZero
+}
+func (mgr *BufMgrOrgImpl) GetPagePool() []Page {
+	return mgr.pagePool
 }

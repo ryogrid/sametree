@@ -14,7 +14,7 @@ func TestBLTree_collapseRoot(t *testing.T) {
 	_ = os.Remove("data/collapse_root_test.db")
 
 	type fields struct {
-		mgr *BufMgr
+		mgr BufMgr
 	}
 	tests := []struct {
 		name   string
@@ -41,10 +41,10 @@ func TestBLTree_collapseRoot(t *testing.T) {
 				}
 
 			}
-			if rootAct := tree.mgr.pagePool[RootPage].Act; rootAct != 1 {
+			if rootAct := tree.mgr.GetPagePool()[RootPage].Act; rootAct != 1 {
 				t.Errorf("rootAct = %v, want %v", rootAct, 1)
 			}
-			if childAct := tree.mgr.pagePool[RootPage+1].Act; childAct != 3 {
+			if childAct := tree.mgr.GetPagePool()[RootPage+1].Act; childAct != 3 {
 				t.Errorf("childAct = %v, want %v", childAct, 3)
 			}
 			var set PageSet
@@ -54,11 +54,11 @@ func TestBLTree_collapseRoot(t *testing.T) {
 				t.Errorf("collapseRoot() = %v, want %v", got, tt.want)
 			}
 
-			if rootAct := tree.mgr.pagePool[RootPage].Act; rootAct != 3 {
+			if rootAct := tree.mgr.GetPagePool()[RootPage].Act; rootAct != 3 {
 				t.Errorf("after collapseRoot rootAct = %v, want %v", rootAct, 3)
 			}
 
-			if !tree.mgr.pagePool[RootPage+1].Free {
+			if !tree.mgr.GetPagePool()[RootPage+1].Free {
 				t.Errorf("after collapseRoot childFree = %v, want %v", false, true)
 			}
 
@@ -107,7 +107,7 @@ func TestBLTree_cleanPage_full_page(t *testing.T) {
 	fmt.Printf("size: %v\n", len(data))
 
 	set := PageSet{
-		page:  NewPage(mgr.pageDataSize),
+		page:  NewPage(mgr.GetPageDataSize()),
 		latch: &LatchSet{},
 	}
 	copy(set.page.Data, data)
@@ -201,7 +201,7 @@ func TestBLTree_insert_and_find_concurrently_by_little_endian(t *testing.T) {
 	insertAndFindConcurrently(t, 7, mgr, keys)
 }
 
-func insertAndFindConcurrently(t *testing.T, routineNum int, mgr *BufMgr, keys [][]byte) {
+func insertAndFindConcurrently(t *testing.T, routineNum int, mgr BufMgr, keys [][]byte) {
 	wg := sync.WaitGroup{}
 	wg.Add(routineNum)
 
