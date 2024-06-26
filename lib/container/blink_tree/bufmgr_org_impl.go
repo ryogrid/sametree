@@ -179,7 +179,7 @@ func NewBufMgr(name string, bits uint8, nodeMax uint) BufMgr {
 	return &mgr
 }
 
-func (mgr *BufMgrOrgImpl) ReadPage(page **Page, pageNo Uid) BLTErr {
+func (mgr *BufMgrOrgImpl) ReadPage(page *Page, pageNo Uid) BLTErr {
 	off := pageNo << mgr.pageBits
 
 	pageBytes := make([]byte, mgr.pageSize)
@@ -188,11 +188,11 @@ func (mgr *BufMgrOrgImpl) ReadPage(page **Page, pageNo Uid) BLTErr {
 		return BLTErrRead
 	}
 
-	if err := binary.Read(bytes.NewReader(pageBytes), binary.LittleEndian, (*page).PageHeader); err != nil {
+	if err := binary.Read(bytes.NewReader(pageBytes), binary.LittleEndian, &page.PageHeader); err != nil {
 		errPrintf("Unable to read page header as bytes: %v\n", err)
 		return BLTErrRead
 	}
-	(*page).Data = pageBytes[PageHeaderSize:]
+	page.Data = pageBytes[PageHeaderSize:]
 
 	return BLTErrOk
 }
@@ -309,7 +309,7 @@ func (mgr *BufMgrOrgImpl) LatchLink(hashIdx uint, slot uint, pageNo Uid, loadIt 
 	latch.pin = 1
 
 	if loadIt {
-		if mgr.err = mgr.ReadPage(&page, pageNo); mgr.err != BLTErrOk {
+		if mgr.err = mgr.ReadPage(page, pageNo); mgr.err != BLTErrOk {
 			return mgr.err
 		}
 		*reads++

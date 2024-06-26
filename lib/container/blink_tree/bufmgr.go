@@ -1,7 +1,7 @@
 package blink_tree
 
 type BufMgr interface {
-	ReadPage(page **Page, pageNo Uid) BLTErr
+	ReadPage(page *Page, pageNo Uid) BLTErr
 	WritePage(page *Page, pageNo Uid) BLTErr
 	Close()
 	PoolAudit()

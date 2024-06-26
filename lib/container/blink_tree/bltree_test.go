@@ -68,28 +68,6 @@ func TestBLTree_collapseRoot(t *testing.T) {
 	}
 }
 
-func TestBLTree_insert_and_find_samehada(t *testing.T) {
-	poolSize := uint32(10)
-
-	dm := disk.NewDiskManagerTest()
-	bpm := buffer.NewBufferPoolManager(poolSize, dm)
-
-	mgr := NewBufMgrSamehada("data/bltree_insert_and_find.db", 12, 4, bpm)
-	bltree := NewBLTree(mgr)
-	if valLen, _, _ := bltree.findKey([]byte{1, 1, 1, 1}, BtId); valLen >= 0 {
-		t.Errorf("findKey() = %v, want %v", valLen, -1)
-	}
-
-	if err := bltree.insertKey([]byte{1, 1, 1, 1}, 0, [BtId]byte{0, 0, 0, 0, 0, 1}, true); err != BLTErrOk {
-		t.Errorf("insertKey() = %v, want %v", err, BLTErrOk)
-	}
-
-	_, foundKey, _ := bltree.findKey([]byte{1, 1, 1, 1}, BtId)
-	if bytes.Compare(foundKey, []byte{1, 1, 1, 1}) != 0 {
-		t.Errorf("findKey() = %v, want %v", foundKey, []byte{1, 1, 1, 1})
-	}
-}
-
 func TestBLTree_cleanPage_full_page(t *testing.T) {
 	_ = os.Remove("data/bltree_clean_page.db")
 	mgr := NewBufMgr("data/bltree_clean_page.db", 15, 16*7)
@@ -137,6 +115,28 @@ func TestBLTree_cleanPage_full_page(t *testing.T) {
 
 func TestBLTree_insert_and_find(t *testing.T) {
 	mgr := NewBufMgr("data/bltree_insert_and_find.db", 13, 20)
+	bltree := NewBLTree(mgr)
+	if valLen, _, _ := bltree.findKey([]byte{1, 1, 1, 1}, BtId); valLen >= 0 {
+		t.Errorf("findKey() = %v, want %v", valLen, -1)
+	}
+
+	if err := bltree.insertKey([]byte{1, 1, 1, 1}, 0, [BtId]byte{0, 0, 0, 0, 0, 1}, true); err != BLTErrOk {
+		t.Errorf("insertKey() = %v, want %v", err, BLTErrOk)
+	}
+
+	_, foundKey, _ := bltree.findKey([]byte{1, 1, 1, 1}, BtId)
+	if bytes.Compare(foundKey, []byte{1, 1, 1, 1}) != 0 {
+		t.Errorf("findKey() = %v, want %v", foundKey, []byte{1, 1, 1, 1})
+	}
+}
+
+func TestBLTree_insert_and_find_samehada(t *testing.T) {
+	poolSize := uint32(10)
+
+	dm := disk.NewDiskManagerTest()
+	bpm := buffer.NewBufferPoolManager(poolSize, dm)
+
+	mgr := NewBufMgrSamehada("data/bltree_insert_and_find.db", 12, 20, bpm)
 	bltree := NewBLTree(mgr)
 	if valLen, _, _ := bltree.findKey([]byte{1, 1, 1, 1}, BtId); valLen >= 0 {
 		t.Errorf("findKey() = %v, want %v", valLen, -1)
