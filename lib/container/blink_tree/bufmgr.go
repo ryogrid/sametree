@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"sync/atomic"
-	"syscall"
 )
 
 type (
@@ -71,6 +70,9 @@ func NewBufMgr(name string, bits uint8, nodeMax uint) *BufMgr {
 		return nil
 	}
 
+	// data to map to BufMgr::pageZero.alloc
+	var pageZeroBytes []byte
+
 	// read minimum page size to get root info
 	//  to support raw disk partition files
 	//  check if bits == 0 on the disk.
@@ -85,6 +87,7 @@ func NewBufMgr(name string, bits uint8, nodeMax uint) *BufMgr {
 				return nil
 			}
 			page.Data = pageBytes[PageHeaderSize:]
+			pageZeroBytes = pageBytes
 
 			if page.Bits > 0 {
 				bits = page.Bits
@@ -114,6 +117,13 @@ func NewBufMgr(name string, bits uint8, nodeMax uint) *BufMgr {
 			mgr.Close()
 			return nil
 		}
+
+		// store page zero data to map to BufMgr::pageZero.alloc
+		buf := bytes.NewBuffer(make([]byte, 0, mgr.pageSize))
+		if err2 := binary.Write(buf, binary.LittleEndian, alloc.PageHeader); err2 != nil {
+			errPrintf("Unable to output page header as bytes: %v\n", err2)
+		}
+		pageZeroBytes = buf.Bytes()
 
 		alloc = NewPage(mgr.pageDataSize)
 		alloc.Bits = mgr.pageBits
@@ -148,13 +158,14 @@ func NewBufMgr(name string, bits uint8, nodeMax uint) *BufMgr {
 
 	}
 
-	flag := syscall.PROT_READ | syscall.PROT_WRITE
-	mgr.pageZero.alloc, err = syscall.Mmap(int(mgr.idx.Fd()), 0, int(mgr.pageSize), flag, syscall.MAP_SHARED)
-	if err != nil {
-		errPrintf("Unable to mmap btree page zero: %v\n", err)
-		mgr.Close()
-		return nil
-	}
+	//flag := syscall.PROT_READ | syscall.PROT_WRITE
+	//mgr.pageZero.alloc, err = syscall.Mmap(int(mgr.idx.Fd()), 0, int(mgr.pageSize), flag, syscall.MAP_SHARED)
+	//if err != nil {
+	//	errPrintf("Unable to mmap btree page zero: %v\n", err)
+	//	mgr.Close()
+	//	return nil
+	//}
+	mgr.pageZero.alloc = pageZeroBytes
 
 	// comment out because of panic
 	//if err := syscall.Mlock(mgr.pageZero); err != nil {
@@ -216,6 +227,12 @@ func (mgr *BufMgr) writePage(page *Page, pageNo uid) BLTErr {
 // flush dirty pool pages to the btree and close the btree file
 func (mgr *BufMgr) Close() {
 	num := 0
+
+	// flush page 0
+	pageZero := NewPage(mgr.pageDataSize)
+	pageZero.PageHeader.Right = *mgr.pageZero.AllocRight()
+	mgr.writePage(pageZero, 0)
+
 	// flush dirty pool pages to the btree
 	var slot uint32
 	for slot = 1; slot <= mgr.latchDeployed; slot++ {
@@ -231,9 +248,9 @@ func (mgr *BufMgr) Close() {
 
 	errPrintf("%d buffer pool pages flushed\n", num)
 
-	if err := syscall.Munmap(mgr.pageZero.alloc); err != nil {
-		errPrintf("Unable to munmap btree page zero: %v\n", err)
-	}
+	//if err := syscall.Munmap(mgr.pageZero.alloc); err != nil {
+	//	errPrintf("Unable to munmap btree page zero: %v\n", err)
+	//}
 
 	if err := mgr.idx.Close(); err != nil {
 		errPrintf("Unable to close btree file: %v\n", err)
