@@ -231,6 +231,7 @@ func (mgr *BufMgr) Close() {
 	// flush page 0
 	pageZero := NewPage(mgr.pageDataSize)
 	pageZero.PageHeader.Right = *mgr.pageZero.AllocRight()
+	pageZero.PageHeader.Bits = mgr.pageBits
 	mgr.writePage(pageZero, 0)
 
 	// flush dirty pool pages to the btree

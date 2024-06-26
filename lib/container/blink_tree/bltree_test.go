@@ -10,61 +10,78 @@ import (
 	"time"
 )
 
-//func TestBLTree_collapseRoot(t *testing.T) {
-//	_ = os.Remove("data/collapse_root_test.db")
-//
-//	type fields struct {
-//		mgr *BufMgr
-//	}
-//	tests := []struct {
-//		name   string
-//		fields fields
-//		want   BLTErr
-//	}{
-//		{
-//			name: "collapse root",
-//			fields: fields{
-//				mgr: NewBufMgr("data/collapse_root_test.db", 13, 20),
-//			},
-//			want: BLTErrOk,
-//		},
-//	}
-//	for _, tt := range tests {
-//		t.Run(tt.name, func(t *testing.T) {
-//			tree := NewBLTree(tt.fields.mgr)
-//			for _, key := range [][]byte{
-//				{1, 1, 1, 1},
-//				{1, 1, 1, 2},
-//			} {
-//				if err := tree.insertKey(key, 0, [BtId]byte{1}, true); err != BLTErrOk {
-//					t.Errorf("insertKey() = %v, want %v", err, BLTErrOk)
-//				}
-//
-//			}
-//			if rootAct := tree.mgr.pagePool[RootPage].Act; rootAct != 1 {
-//				t.Errorf("rootAct = %v, want %v", rootAct, 1)
-//			}
-//			if childAct := tree.mgr.pagePool[RootPage+1].Act; childAct != 3 {
-//				t.Errorf("childAct = %v, want %v", childAct, 3)
-//			}
-//			var set PageSet
-//			set.latch = tree.mgr.PinLatch(RootPage, true, &tree.reads, &tree.writes)
-//			set.page = tree.mgr.MapPage(set.latch)
-//			if got := tree.collapseRoot(&set); got != tt.want {
-//				t.Errorf("collapseRoot() = %v, want %v", got, tt.want)
-//			}
-//
-//			if rootAct := tree.mgr.pagePool[RootPage].Act; rootAct != 3 {
-//				t.Errorf("after collapseRoot rootAct = %v, want %v", rootAct, 3)
-//			}
-//
-//			if !tree.mgr.pagePool[RootPage+1].Free {
-//				t.Errorf("after collapseRoot childFree = %v, want %v", false, true)
-//			}
-//
-//		})
-//	}
-//}
+func TestBLTree_collapseRoot(t *testing.T) {
+	_ = os.Remove("data/collapse_root_test.db")
+
+	type fields struct {
+		mgr *BufMgr
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		want   BLTErr
+	}{
+		{
+			name: "collapse root",
+			fields: fields{
+				mgr: NewBufMgr("data/collapse_root_test.db", 13, 20),
+			},
+			want: BLTErrOk,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tree := NewBLTree(tt.fields.mgr)
+			for _, key := range [][]byte{
+				{1, 1, 1, 1},
+				{1, 1, 1, 2},
+			} {
+				if err := tree.insertKey(key, 0, [BtId]byte{1}, true); err != BLTErrOk {
+					t.Errorf("insertKey() = %v, want %v", err, BLTErrOk)
+				}
+
+			}
+			if rootAct := tree.mgr.pagePool[RootPage].Act; rootAct != 1 {
+				t.Errorf("rootAct = %v, want %v", rootAct, 1)
+			}
+			if childAct := tree.mgr.pagePool[RootPage+1].Act; childAct != 3 {
+				t.Errorf("childAct = %v, want %v", childAct, 3)
+			}
+			var set PageSet
+			set.latch = tree.mgr.PinLatch(RootPage, true, &tree.reads, &tree.writes)
+			set.page = tree.mgr.MapPage(set.latch)
+			if got := tree.collapseRoot(&set); got != tt.want {
+				t.Errorf("collapseRoot() = %v, want %v", got, tt.want)
+			}
+
+			if rootAct := tree.mgr.pagePool[RootPage].Act; rootAct != 3 {
+				t.Errorf("after collapseRoot rootAct = %v, want %v", rootAct, 3)
+			}
+
+			if !tree.mgr.pagePool[RootPage+1].Free {
+				t.Errorf("after collapseRoot childFree = %v, want %v", false, true)
+			}
+
+		})
+	}
+}
+
+func TestBLTree_insert_and_find_samehada(t *testing.T) {
+	mgr := NewBufMgr("data/bltree_insert_and_find.db", 13, 20)
+	bltree := NewBLTree(mgr)
+	if valLen, _, _ := bltree.findKey([]byte{1, 1, 1, 1}, BtId); valLen >= 0 {
+		t.Errorf("findKey() = %v, want %v", valLen, -1)
+	}
+
+	if err := bltree.insertKey([]byte{1, 1, 1, 1}, 0, [BtId]byte{0, 0, 0, 0, 0, 1}, true); err != BLTErrOk {
+		t.Errorf("insertKey() = %v, want %v", err, BLTErrOk)
+	}
+
+	_, foundKey, _ := bltree.findKey([]byte{1, 1, 1, 1}, BtId)
+	if bytes.Compare(foundKey, []byte{1, 1, 1, 1}) != 0 {
+		t.Errorf("findKey() = %v, want %v", foundKey, []byte{1, 1, 1, 1})
+	}
+}
 
 func TestBLTree_cleanPage_full_page(t *testing.T) {
 	_ = os.Remove("data/bltree_clean_page.db")
