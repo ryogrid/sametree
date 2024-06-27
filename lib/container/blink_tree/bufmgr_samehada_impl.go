@@ -11,6 +11,7 @@ import (
 
 	"github.com/ryogrid/sametree/lib/storage/buffer"
 	"github.com/ryogrid/sametree/lib/storage/page"
+	shpage "github.com/ryogrid/sametree/lib/storage/page"
 	"github.com/ryogrid/sametree/lib/types"
 )
 
@@ -67,6 +68,11 @@ func NewBufMgrSamehada(name string, bits uint8, nodeMax uint, bpm *buffer.Buffer
 		return nil
 	}
 
+	mgr.bpm = bpm
+	mgr.pageIdConvMap = make(map[Uid]types.PageID, 0)
+	mgr.shPagesMap = make(map[types.PageID]*page.Page, 0)
+	mgr.shMetadataMutex = &sync.Mutex{}
+
 	// data to map to BufMgrSamehadaImpl::pageZero.alloc
 	var pageZeroBytes []byte
 
@@ -106,6 +112,7 @@ func NewBufMgrSamehada(name string, bits uint8, nodeMax uint, bpm *buffer.Buffer
 
 	if initit {
 		alloc := NewPage(mgr.pageDataSize)
+		//fmt.Println("NewBufMgrSamehadaImpl (1) alloc: ", *alloc)
 		alloc.Bits = mgr.pageBits
 		PutID(&alloc.Right, MinLvl+1)
 
@@ -147,6 +154,11 @@ func NewBufMgrSamehada(name string, bits uint8, nodeMax uint, bpm *buffer.Buffer
 			alloc.Cnt = 1
 			alloc.Act = 1
 
+			reads := uint(0)
+			writes := uint(0)
+			if err := mgr.NewPage(&PageSet{}, alloc, &reads, &writes); err != BLTErrOk {
+				panic("failed to create new page")
+			}
 			if err := mgr.WritePage(alloc, Uid(MinLvl-lvl)); err != BLTErrOk {
 				errPrintf("Unable to create btree page zero\n")
 				return nil
@@ -172,10 +184,6 @@ func NewBufMgrSamehada(name string, bits uint8, nodeMax uint, bpm *buffer.Buffer
 	mgr.hashTable = make([]HashEntry, mgr.latchHash)
 	mgr.latchSets = make([]LatchSet, mgr.latchTotal)
 	mgr.pagePool = make([]Page, mgr.latchTotal)
-	mgr.bpm = bpm
-	mgr.pageIdConvMap = make(map[Uid]types.PageID, 0)
-	mgr.shPagesMap = make(map[types.PageID]*page.Page, 0)
-	mgr.shMetadataMutex = &sync.Mutex{}
 
 	return &mgr
 }
@@ -240,12 +248,20 @@ func (mgr *BufMgrSamehadaImpl) WritePage(page *Page, pageNo Uid) BLTErr {
 
 	// release page to SamehadaDB's buffer pool
 
+	if pageNo == 0 {
+		// ignore page zero
+		return BLTErrOk
+	}
+
 	fmt.Println("WritePage pageNo: ", pageNo)
 
 	mgr.shMetadataMutex.Lock()
 	shPageId := mgr.pageIdConvMap[pageNo]
-	shPage := mgr.shPagesMap[shPageId]
-	delete(mgr.shPagesMap, shPageId)
+	var shPage *shpage.Page
+	if _, ok := mgr.shPagesMap[shPageId]; ok {
+		shPage = mgr.shPagesMap[shPageId]
+		delete(mgr.shPagesMap, shPageId)
+	}
 	mgr.shMetadataMutex.Unlock()
 
 	headerBuf := bytes.NewBuffer(make([]byte, PageHeaderSize))
