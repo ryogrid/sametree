@@ -3,6 +3,7 @@ package blink_tree
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"os"
 	"sync/atomic"
@@ -182,6 +183,8 @@ func NewBufMgr(name string, bits uint8, nodeMax uint) BufMgr {
 func (mgr *BufMgrOrgImpl) ReadPage(page *Page, pageNo Uid) BLTErr {
 	off := pageNo << mgr.pageBits
 
+	fmt.Println("ReadPage pageNo: ", pageNo, " off: ", off)
+
 	pageBytes := make([]byte, mgr.pageSize)
 	if n, err := mgr.idx.ReadAt(pageBytes, int64(off)); err != nil || n < int(mgr.pageSize) {
 		errPrintf("Unable to read page. Because of err: %v or n: %d\n", err, n)
@@ -200,6 +203,8 @@ func (mgr *BufMgrOrgImpl) ReadPage(page *Page, pageNo Uid) BLTErr {
 // writePage writes a page to permanent location in BLTree file,
 // and clear the dirty bit (← clear していない...)
 func (mgr *BufMgrOrgImpl) WritePage(page *Page, pageNo Uid) BLTErr {
+	fmt.Println("WritePage pageNo: ", pageNo)
+
 	off := pageNo << mgr.pageBits
 	// write page to disk as []byte
 	buf := bytes.NewBuffer(make([]byte, 0, mgr.pageSize))
@@ -442,6 +447,7 @@ func (mgr *BufMgrOrgImpl) NewPage(set *PageSet, contents *Page, reads *uint, wri
 
 	// use empty chain first, else allocate empty page
 	pageNo := GetID(&mgr.pageZero.chain)
+	fmt.Println("NewPage pageNo: ", pageNo)
 	if pageNo > 0 {
 		set.latch = mgr.PinLatch(pageNo, true, reads, writes)
 		if set.latch != nil {

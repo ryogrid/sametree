@@ -3,13 +3,15 @@ package blink_tree
 import (
 	"bytes"
 	"encoding/binary"
-	"github.com/ryogrid/sametree/lib/storage/buffer"
-	"github.com/ryogrid/sametree/lib/storage/page"
-	"github.com/ryogrid/sametree/lib/types"
+	"fmt"
 	"io"
 	"os"
 	"sync"
 	"sync/atomic"
+
+	"github.com/ryogrid/sametree/lib/storage/buffer"
+	"github.com/ryogrid/sametree/lib/storage/page"
+	"github.com/ryogrid/sametree/lib/types"
 )
 
 type (
@@ -171,8 +173,8 @@ func NewBufMgrSamehada(name string, bits uint8, nodeMax uint, bpm *buffer.Buffer
 	mgr.latchSets = make([]LatchSet, mgr.latchTotal)
 	mgr.pagePool = make([]Page, mgr.latchTotal)
 	mgr.bpm = bpm
-	mgr.pageIdConvMap = make(map[Uid]types.PageID)
-	mgr.shPagesMap = make(map[types.PageID]*page.Page)
+	mgr.pageIdConvMap = make(map[Uid]types.PageID, 0)
+	mgr.shPagesMap = make(map[types.PageID]*page.Page, 0)
 	mgr.shMetadataMutex = &sync.Mutex{}
 
 	return &mgr
@@ -193,8 +195,10 @@ func (mgr *BufMgrSamehadaImpl) ReadPage(page *Page, pageNo Uid) BLTErr {
 	//}
 	//page.Data = pageBytes[PageHeaderSize:]
 
+	fmt.Println("ReadPage pageNo: ", pageNo)
 	mgr.shMetadataMutex.Lock()
 	shPageId := mgr.pageIdConvMap[pageNo]
+	fmt.Println("ReadPage shPageId: ", shPageId)
 	mgr.shMetadataMutex.Unlock()
 	shPage := mgr.bpm.FetchPage(shPageId)
 	if shPage == nil {
@@ -235,6 +239,8 @@ func (mgr *BufMgrSamehadaImpl) WritePage(page *Page, pageNo Uid) BLTErr {
 		}*/
 
 	// release page to SamehadaDB's buffer pool
+
+	fmt.Println("WritePage pageNo: ", pageNo)
 
 	mgr.shMetadataMutex.Lock()
 	shPageId := mgr.pageIdConvMap[pageNo]
@@ -471,9 +477,12 @@ func (mgr *BufMgrSamehadaImpl) NewPage(set *PageSet, contents *Page, reads *uint
 	// lock allocation page
 	mgr.lock.SpinWriteLock()
 
+	fmt.Println("NewPage(1):  pageNo: ", GetID(&mgr.pageZero.chain))
+
 	// use empty chain first, else allocate empty page
 	pageNo := GetID(&mgr.pageZero.chain)
 	if pageNo > 0 {
+		fmt.Println("NewPage(2):  pageNo: ", pageNo)
 		set.latch = mgr.PinLatch(pageNo, true, reads, writes)
 		if set.latch != nil {
 			set.page = mgr.MapPage(set.latch)
@@ -503,6 +512,7 @@ func (mgr *BufMgrSamehadaImpl) NewPage(set *PageSet, contents *Page, reads *uint
 	if set.latch != nil {
 		set.page = mgr.MapPage(set.latch)
 
+		fmt.Println("NewPage (3) pageNo: ", pageNo)
 		// map Page of SamehadaDB to Page of BlinkTree
 		shPage := mgr.bpm.NewPage()
 		if shPage == nil {

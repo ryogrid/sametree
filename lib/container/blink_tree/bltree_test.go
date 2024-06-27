@@ -4,12 +4,13 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"github.com/ryogrid/sametree/lib/storage/buffer"
-	"github.com/ryogrid/sametree/lib/storage/disk"
 	"os"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/ryogrid/sametree/lib/storage/buffer"
+	"github.com/ryogrid/sametree/lib/storage/disk"
 )
 
 func TestBLTree_collapseRoot(t *testing.T) {
@@ -136,7 +137,9 @@ func TestBLTree_insert_and_find_samehada(t *testing.T) {
 	dm := disk.NewDiskManagerTest()
 	bpm := buffer.NewBufferPoolManager(poolSize, dm)
 
-	mgr := NewBufMgrSamehada("data/bltree_insert_and_find.db", 12, 20, bpm)
+	os.Remove("data/bltree_insert_and_find_samehada.db")
+
+	mgr := NewBufMgrSamehada("data/bltree_insert_and_find_samehada.db", 12, 20, bpm)
 	bltree := NewBLTree(mgr)
 	if valLen, _, _ := bltree.findKey([]byte{1, 1, 1, 1}, BtId); valLen >= 0 {
 		t.Errorf("findKey() = %v, want %v", valLen, -1)
