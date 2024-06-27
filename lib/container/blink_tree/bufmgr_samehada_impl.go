@@ -73,8 +73,8 @@ func NewBufMgrSamehada(name string, bits uint8, nodeMax uint, bpm *buffer.Buffer
 	mgr.shPagesMap = make(map[types.PageID]*page.Page, 0)
 	mgr.shMetadataMutex = &sync.Mutex{}
 
-	// data to map to BufMgrSamehadaImpl::pageZero.alloc
-	var pageZeroBytes []byte
+	//// data to map to BufMgrSamehadaImpl::pageZero.alloc
+	//var pageZeroBytes []byte
 
 	// read minimum page size to get root info
 	//  to support raw disk partition files
@@ -90,7 +90,8 @@ func NewBufMgrSamehada(name string, bits uint8, nodeMax uint, bpm *buffer.Buffer
 				return nil
 			}
 			page.Data = pageBytes[PageHeaderSize:]
-			pageZeroBytes = pageBytes
+			//pageZeroBytes = pageBytes
+			mgr.pageZero.alloc = pageBytes
 
 			if page.Bits > 0 {
 				bits = page.Bits
@@ -110,6 +111,10 @@ func NewBufMgrSamehada(name string, bits uint8, nodeMax uint, bpm *buffer.Buffer
 
 	mgr.latchTotal = nodeMax
 
+	mgr.hashTable = make([]HashEntry, mgr.latchHash)
+	mgr.latchSets = make([]LatchSet, mgr.latchTotal)
+	mgr.pagePool = make([]Page, mgr.latchTotal)
+
 	if initit {
 		alloc := NewPage(mgr.pageDataSize)
 		//fmt.Println("NewBufMgrSamehadaImpl (1) alloc: ", *alloc)
@@ -127,7 +132,8 @@ func NewBufMgrSamehada(name string, bits uint8, nodeMax uint, bpm *buffer.Buffer
 		if err2 := binary.Write(buf, binary.LittleEndian, alloc.PageHeader); err2 != nil {
 			errPrintf("Unable to output page header as bytes: %v\n", err2)
 		}
-		pageZeroBytes = buf.Bytes()
+		//pageZeroBytes = buf.Bytes()
+		mgr.pageZero.alloc = buf.Bytes()
 
 		alloc = NewPage(mgr.pageDataSize)
 		alloc.Bits = mgr.pageBits
@@ -156,7 +162,8 @@ func NewBufMgrSamehada(name string, bits uint8, nodeMax uint, bpm *buffer.Buffer
 
 			reads := uint(0)
 			writes := uint(0)
-			if err := mgr.NewPage(&PageSet{}, alloc, &reads, &writes); err != BLTErrOk {
+			pageId := Uid(MinLvl - lvl)
+			if err := mgr.NewPage(&PageSet{}, alloc, &reads, &writes, &pageId); err != BLTErrOk {
 				panic("failed to create new page")
 			}
 			if err := mgr.WritePage(alloc, Uid(MinLvl-lvl)); err != BLTErrOk {
@@ -174,16 +181,12 @@ func NewBufMgrSamehada(name string, bits uint8, nodeMax uint, bpm *buffer.Buffer
 	//	mgr.Close()
 	//	return nil
 	//}
-	mgr.pageZero.alloc = pageZeroBytes
+	//mgr.pageZero.alloc = pageZeroBytes
 
 	// comment out because of panic
 	//if err := syscall.Mlock(mgr.pageZero); err != nil {
 	//	log.Panicf("Unable to mlock btree page zero: %v", err)
 	//}
-
-	mgr.hashTable = make([]HashEntry, mgr.latchHash)
-	mgr.latchSets = make([]LatchSet, mgr.latchTotal)
-	mgr.pagePool = make([]Page, mgr.latchTotal)
 
 	return &mgr
 }
@@ -261,6 +264,9 @@ func (mgr *BufMgrSamehadaImpl) WritePage(page *Page, pageNo Uid) BLTErr {
 	if _, ok := mgr.shPagesMap[shPageId]; ok {
 		shPage = mgr.shPagesMap[shPageId]
 		delete(mgr.shPagesMap, shPageId)
+	} else {
+		fmt.Println("WritePage: page not found pageNo: ", pageNo, " shPageId: ", shPageId)
+		panic("page not found")
 	}
 	mgr.shMetadataMutex.Unlock()
 
@@ -489,7 +495,8 @@ func (mgr *BufMgrSamehadaImpl) UnpinLatch(latch *LatchSet) {
 
 // NewPage allocate a new page
 // returns the page with latched but unlocked
-func (mgr *BufMgrSamehadaImpl) NewPage(set *PageSet, contents *Page, reads *uint, writes *uint) BLTErr {
+// Uid argument is used only for BufMgr initialization
+func (mgr *BufMgrSamehadaImpl) NewPage(set *PageSet, contents *Page, reads *uint, writes *uint, pageId *Uid) BLTErr {
 	// lock allocation page
 	mgr.lock.SpinWriteLock()
 
@@ -516,8 +523,12 @@ func (mgr *BufMgrSamehadaImpl) NewPage(set *PageSet, contents *Page, reads *uint
 		return mgr.err
 	}
 
-	pageNo = GetID(mgr.pageZero.AllocRight())
-	mgr.pageZero.SetAllocRight(pageNo + 1)
+	if pageId != nil {
+		pageNo = *pageId
+	} else {
+		pageNo = GetID(mgr.pageZero.AllocRight())
+		mgr.pageZero.SetAllocRight(pageNo + 1)
+	}
 
 	// unlock allocation latch
 	mgr.lock.SpinReleaseWrite()
@@ -535,11 +546,13 @@ func (mgr *BufMgrSamehadaImpl) NewPage(set *PageSet, contents *Page, reads *uint
 			panic("failed to create new page")
 		}
 		// no need initializes page header here
-		set.page.Data = shPage.Data()[PageHeaderSize:]
+		//set.page.Data = shPage.Data()[PageHeaderSize:]
+		set.page.Data = shPage.Data()[:]
 		mgr.shMetadataMutex.Lock()
 		mgr.pageIdConvMap[pageNo] = shPage.GetPageId()
 		mgr.shPagesMap[shPage.GetPageId()] = shPage
 		mgr.shMetadataMutex.Unlock()
+		fmt.Println("NewPage (4) page mapping :", pageNo, "and", shPage.GetPageId())
 		isAllocatedFromSamehada = true
 	} else {
 		mgr.err = BLTErrStruct

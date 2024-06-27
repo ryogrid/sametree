@@ -441,7 +441,7 @@ func (mgr *BufMgrOrgImpl) UnpinLatch(latch *LatchSet) {
 
 // NewPage allocate a new page
 // returns the page with latched but unlocked
-func (mgr *BufMgrOrgImpl) NewPage(set *PageSet, contents *Page, reads *uint, writes *uint) BLTErr {
+func (mgr *BufMgrOrgImpl) NewPage(set *PageSet, contents *Page, reads *uint, writes *uint, _pageId *Uid) BLTErr {
 	// lock allocation page
 	mgr.lock.SpinWriteLock()
 
