@@ -78,6 +78,28 @@ func NewPage(pageDataSize uint32) *Page {
 	}
 }
 
+//func (ph *Page) SerializePageHeader() []byte {
+//	buf := make([]byte, PageHeaderSize)
+//	binary.LittleEndian.PutUint32(buf[0:], ph.Cnt)
+//	binary.LittleEndian.PutUint32(buf[4:], ph.Act)
+//	binary.LittleEndian.PutUint32(buf[8:], ph.Min)
+//	binary.LittleEndian.PutUint32(buf[12:], ph.Garbage)
+//	buf[16] = ph.Bits
+//	if ph.Free {
+//		buf[17] = 1
+//	} else {
+//		buf[17] = 0
+//	}
+//	buf[18] = ph.Lvl
+//	if ph.Kill {
+//		buf[19] = 1
+//	} else {
+//		buf[19] = 0
+//	}
+//	copy(buf[20:], ph.Right[:])
+//	return buf
+//}
+
 func (p *Page) slotBytes(i uint32) []byte {
 	off := SlotSize * (i - 1)
 	return p.Data[off : off+SlotSize]

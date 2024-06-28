@@ -273,7 +273,7 @@ func (mgr *BufMgrSamehadaImpl) WritePage(page *Page, pageNo Uid) BLTErr {
 		if shPage == nil {
 			panic("failed to create new page")
 		}
-		copy((*shPage.Data())[PageHeaderSize:], page.Data)
+		copy(shPage.Data()[PageHeaderSize:], page.Data)
 		mgr.pageIdConvMap[pageNo] = shPage.GetPageId()
 		shPageId = shPage.GetPageId()
 
@@ -282,10 +282,10 @@ func (mgr *BufMgrSamehadaImpl) WritePage(page *Page, pageNo Uid) BLTErr {
 	}
 	mgr.shMetadataMutex.Unlock()
 
-	headerBuf := bytes.NewBuffer(make([]byte, PageHeaderSize))
+	headerBuf := bytes.NewBuffer(make([]byte, 0, PageHeaderSize))
 	binary.Write(headerBuf, binary.LittleEndian, page.PageHeader)
 	headerBytes := headerBuf.Bytes()
-	copy((*shPage.Data())[:], headerBytes)
+	copy((*shPage.Data())[:PageHeaderSize], headerBytes[:PageHeaderSize])
 	mgr.bpm.UnpinPage(shPageId, true)
 
 	return BLTErrOk
