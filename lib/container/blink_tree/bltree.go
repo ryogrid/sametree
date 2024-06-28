@@ -495,7 +495,7 @@ func (tree *BLTree) splitRoot(root *PageSet, right *LatchSet) BLTErr {
 
 	// Obtain an empty page to use, and copy the current
 	// root contents into it, e.g. lower keys
-	if err := tree.mgr.NewPage(&left, root.page, &tree.reads, &tree.writes, nil); err != BLTErrOk {
+	if err := tree.mgr.NewPage(&left, root.page, &tree.reads, &tree.writes); err != BLTErrOk {
 		return err
 	}
 
@@ -599,7 +599,7 @@ func (tree *BLTree) splitPage(set *PageSet) uint {
 	}
 
 	// get new free page and write higher keys to it.
-	if err := tree.mgr.NewPage(&right, frame, &tree.reads, &tree.writes, nil); err != BLTErrOk {
+	if err := tree.mgr.NewPage(&right, frame, &tree.reads, &tree.writes); err != BLTErrOk {
 		return 0
 	}
 

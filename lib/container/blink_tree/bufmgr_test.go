@@ -425,7 +425,7 @@ func TestBufMgr_NewPage(t *testing.T) {
 			if initialAllocRight != MinLvl+1 {
 				t.Errorf("NewBufMgr() failed to initialize allock right")
 			}
-			if err := mgr.NewPage(&tt.args.pageSet, &tt.args.page, &tt.args.reads, &tt.args.writes, nil); err != BLTErrOk {
+			if err := mgr.NewPage(&tt.args.pageSet, &tt.args.page, &tt.args.reads, &tt.args.writes); err != BLTErrOk {
 				t.Errorf("NewPage() failed to create page with unexpected err: %v", err)
 			}
 

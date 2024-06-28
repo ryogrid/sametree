@@ -160,12 +160,12 @@ func NewBufMgrSamehada(name string, bits uint8, nodeMax uint, bpm *buffer.Buffer
 			alloc.Cnt = 1
 			alloc.Act = 1
 
-			reads := uint(0)
-			writes := uint(0)
-			pageId := Uid(MinLvl - lvl)
-			if err := mgr.NewPage(&PageSet{}, alloc, &reads, &writes, &pageId); err != BLTErrOk {
-				panic("failed to create new page")
-			}
+			//reads := uint(0)
+			//writes := uint(0)
+			//pageId := Uid(MinLvl - lvl)
+			//if err := mgr.NewPage(&PageSet{}, alloc, &reads, &writes, &pageId); err != BLTErrOk {
+			//	panic("failed to create new page")
+			//}
 			if err := mgr.WritePage(alloc, Uid(MinLvl-lvl)); err != BLTErrOk {
 				errPrintf("Unable to create btree page zero\n")
 				return nil
@@ -218,7 +218,7 @@ func (mgr *BufMgrSamehadaImpl) ReadPage(page *Page, pageNo Uid) BLTErr {
 	// getting latch of SamehadaDB's page is not needed because it is managed on b-link tree container module
 	headerBuf := bytes.NewBuffer(shPage.Data()[:PageHeaderSize])
 	binary.Read(headerBuf, binary.LittleEndian, &page.PageHeader)
-	page.Data = shPage.Data()[PageHeaderSize:]
+	page.Data = (*shPage.Data())[PageHeaderSize:]
 	mgr.shMetadataMutex.Lock()
 	mgr.shPagesMap[shPage.GetPageId()] = shPage
 	mgr.shMetadataMutex.Unlock()
@@ -265,15 +265,27 @@ func (mgr *BufMgrSamehadaImpl) WritePage(page *Page, pageNo Uid) BLTErr {
 		shPage = mgr.shPagesMap[shPageId]
 		delete(mgr.shPagesMap, shPageId)
 	} else {
-		fmt.Println("WritePage: page not found pageNo: ", pageNo, " shPageId: ", shPageId)
-		panic("page not found")
+		// called for not existing page case
+
+		// create new page on SamehadaDB's buffer pool and db file
+		// 1 pin count is left
+		shPage = mgr.bpm.NewPage()
+		if shPage == nil {
+			panic("failed to create new page")
+		}
+		copy((*shPage.Data())[PageHeaderSize:], page.Data)
+		mgr.pageIdConvMap[pageNo] = shPage.GetPageId()
+		shPageId = shPage.GetPageId()
+
+		//fmt.Println("WritePage: page not found pageNo: ", pageNo, " shPageId: ", shPageId)
+		//panic("page not found")
 	}
 	mgr.shMetadataMutex.Unlock()
 
 	headerBuf := bytes.NewBuffer(make([]byte, PageHeaderSize))
 	binary.Write(headerBuf, binary.LittleEndian, page.PageHeader)
 	headerBytes := headerBuf.Bytes()
-	copy(shPage.Data()[:], headerBytes)
+	copy((*shPage.Data())[:], headerBytes)
 	mgr.bpm.UnpinPage(shPageId, true)
 
 	return BLTErrOk
@@ -496,7 +508,7 @@ func (mgr *BufMgrSamehadaImpl) UnpinLatch(latch *LatchSet) {
 // NewPage allocate a new page
 // returns the page with latched but unlocked
 // Uid argument is used only for BufMgr initialization
-func (mgr *BufMgrSamehadaImpl) NewPage(set *PageSet, contents *Page, reads *uint, writes *uint, pageId *Uid) BLTErr {
+func (mgr *BufMgrSamehadaImpl) NewPage(set *PageSet, contents *Page, reads *uint, writes *uint) BLTErr {
 	// lock allocation page
 	mgr.lock.SpinWriteLock()
 
@@ -523,12 +535,8 @@ func (mgr *BufMgrSamehadaImpl) NewPage(set *PageSet, contents *Page, reads *uint
 		return mgr.err
 	}
 
-	if pageId != nil {
-		pageNo = *pageId
-	} else {
-		pageNo = GetID(mgr.pageZero.AllocRight())
-		mgr.pageZero.SetAllocRight(pageNo + 1)
-	}
+	pageNo = GetID(mgr.pageZero.AllocRight())
+	mgr.pageZero.SetAllocRight(pageNo + 1)
 
 	// unlock allocation latch
 	mgr.lock.SpinReleaseWrite()
@@ -546,8 +554,7 @@ func (mgr *BufMgrSamehadaImpl) NewPage(set *PageSet, contents *Page, reads *uint
 			panic("failed to create new page")
 		}
 		// no need initializes page header here
-		//set.page.Data = shPage.Data()[PageHeaderSize:]
-		set.page.Data = shPage.Data()[:]
+		set.page.Data = (*shPage.Data())[PageHeaderSize:]
 		mgr.shMetadataMutex.Lock()
 		mgr.pageIdConvMap[pageNo] = shPage.GetPageId()
 		mgr.shPagesMap[shPage.GetPageId()] = shPage

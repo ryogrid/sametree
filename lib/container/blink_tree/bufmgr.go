@@ -9,7 +9,7 @@ type BufMgr interface {
 	MapPage(latch *LatchSet) *Page
 	PinLatch(pageNo Uid, loadIt bool, reads *uint, writes *uint) *LatchSet
 	UnpinLatch(latch *LatchSet)
-	NewPage(set *PageSet, contents *Page, reads *uint, writes *uint, pageId *Uid) BLTErr
+	NewPage(set *PageSet, contents *Page, reads *uint, writes *uint) BLTErr
 	LoadPage(set *PageSet, key []byte, lvl uint8, lock BLTLockMode, reads *uint, writes *uint) uint32
 	FreePage(set *PageSet)
 	LockPage(mode BLTLockMode, latch *LatchSet)
