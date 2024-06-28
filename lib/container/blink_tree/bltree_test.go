@@ -8,63 +8,66 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/ryogrid/sametree/lib/storage/buffer"
+	"github.com/ryogrid/sametree/lib/storage/disk"
 )
 
-//func TestBLTree_collapseRoot(t *testing.T) {
-//	_ = os.Remove("data/collapse_root_test.db")
-//
-//	type fields struct {
-//		mgr *BufMgr
-//	}
-//	tests := []struct {
-//		name   string
-//		fields fields
-//		want   BLTErr
-//	}{
-//		{
-//			name: "collapse root",
-//			fields: fields{
-//				mgr: NewBufMgr("data/collapse_root_test.db", 13, 20),
-//			},
-//			want: BLTErrOk,
-//		},
-//	}
-//	for _, tt := range tests {
-//		t.Run(tt.name, func(t *testing.T) {
-//			tree := NewBLTree(tt.fields.mgr)
-//			for _, key := range [][]byte{
-//				{1, 1, 1, 1},
-//				{1, 1, 1, 2},
-//			} {
-//				if err := tree.insertKey(key, 0, [BtId]byte{1}, true); err != BLTErrOk {
-//					t.Errorf("insertKey() = %v, want %v", err, BLTErrOk)
-//				}
-//
-//			}
-//			if rootAct := tree.mgr.pagePool[RootPage].Act; rootAct != 1 {
-//				t.Errorf("rootAct = %v, want %v", rootAct, 1)
-//			}
-//			if childAct := tree.mgr.pagePool[RootPage+1].Act; childAct != 3 {
-//				t.Errorf("childAct = %v, want %v", childAct, 3)
-//			}
-//			var set PageSet
-//			set.latch = tree.mgr.PinLatch(RootPage, true, &tree.reads, &tree.writes)
-//			set.page = tree.mgr.MapPage(set.latch)
-//			if got := tree.collapseRoot(&set); got != tt.want {
-//				t.Errorf("collapseRoot() = %v, want %v", got, tt.want)
-//			}
-//
-//			if rootAct := tree.mgr.pagePool[RootPage].Act; rootAct != 3 {
-//				t.Errorf("after collapseRoot rootAct = %v, want %v", rootAct, 3)
-//			}
-//
-//			if !tree.mgr.pagePool[RootPage+1].Free {
-//				t.Errorf("after collapseRoot childFree = %v, want %v", false, true)
-//			}
-//
-//		})
-//	}
-//}
+func TestBLTree_collapseRoot(t *testing.T) {
+	_ = os.Remove("data/collapse_root_test.db")
+
+	type fields struct {
+		mgr BufMgr
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		want   BLTErr
+	}{
+		{
+			name: "collapse root",
+			fields: fields{
+				mgr: NewBufMgr("data/collapse_root_test.db", 13, 20),
+			},
+			want: BLTErrOk,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tree := NewBLTree(tt.fields.mgr)
+			for _, key := range [][]byte{
+				{1, 1, 1, 1},
+				{1, 1, 1, 2},
+			} {
+				if err := tree.insertKey(key, 0, [BtId]byte{1}, true); err != BLTErrOk {
+					t.Errorf("insertKey() = %v, want %v", err, BLTErrOk)
+				}
+
+			}
+			if rootAct := tree.mgr.GetPagePool()[RootPage].Act; rootAct != 1 {
+				t.Errorf("rootAct = %v, want %v", rootAct, 1)
+			}
+			if childAct := tree.mgr.GetPagePool()[RootPage+1].Act; childAct != 3 {
+				t.Errorf("childAct = %v, want %v", childAct, 3)
+			}
+			var set PageSet
+			set.latch = tree.mgr.PinLatch(RootPage, true, &tree.reads, &tree.writes)
+			set.page = tree.mgr.MapPage(set.latch)
+			if got := tree.collapseRoot(&set); got != tt.want {
+				t.Errorf("collapseRoot() = %v, want %v", got, tt.want)
+			}
+
+			if rootAct := tree.mgr.GetPagePool()[RootPage].Act; rootAct != 3 {
+				t.Errorf("after collapseRoot rootAct = %v, want %v", rootAct, 3)
+			}
+
+			if !tree.mgr.GetPagePool()[RootPage+1].Free {
+				t.Errorf("after collapseRoot childFree = %v, want %v", false, true)
+			}
+
+		})
+	}
+}
 
 func TestBLTree_cleanPage_full_page(t *testing.T) {
 	_ = os.Remove("data/bltree_clean_page.db")
@@ -90,7 +93,7 @@ func TestBLTree_cleanPage_full_page(t *testing.T) {
 	fmt.Printf("size: %v\n", len(data))
 
 	set := PageSet{
-		page:  NewPage(mgr.pageDataSize),
+		page:  NewPage(mgr.GetPageDataSize()),
 		latch: &LatchSet{},
 	}
 	copy(set.page.Data, data)
@@ -113,6 +116,30 @@ func TestBLTree_cleanPage_full_page(t *testing.T) {
 
 func TestBLTree_insert_and_find(t *testing.T) {
 	mgr := NewBufMgr("data/bltree_insert_and_find.db", 13, 20)
+	bltree := NewBLTree(mgr)
+	if valLen, _, _ := bltree.findKey([]byte{1, 1, 1, 1}, BtId); valLen >= 0 {
+		t.Errorf("findKey() = %v, want %v", valLen, -1)
+	}
+
+	if err := bltree.insertKey([]byte{1, 1, 1, 1}, 0, [BtId]byte{0, 0, 0, 0, 0, 1}, true); err != BLTErrOk {
+		t.Errorf("insertKey() = %v, want %v", err, BLTErrOk)
+	}
+
+	_, foundKey, _ := bltree.findKey([]byte{1, 1, 1, 1}, BtId)
+	if bytes.Compare(foundKey, []byte{1, 1, 1, 1}) != 0 {
+		t.Errorf("findKey() = %v, want %v", foundKey, []byte{1, 1, 1, 1})
+	}
+}
+
+func TestBLTree_insert_and_find_samehada(t *testing.T) {
+	poolSize := uint32(10)
+
+	dm := disk.NewDiskManagerTest()
+	bpm := buffer.NewBufferPoolManager(poolSize, dm)
+
+	os.Remove("data/bltree_insert_and_find_samehada.db")
+
+	mgr := NewBufMgrSamehada("data/bltree_insert_and_find_samehada.db", 12, 20, bpm, nil)
 	bltree := NewBLTree(mgr)
 	if valLen, _, _ := bltree.findKey([]byte{1, 1, 1, 1}, BtId); valLen >= 0 {
 		t.Errorf("findKey() = %v, want %v", valLen, -1)
@@ -184,7 +211,7 @@ func TestBLTree_insert_and_find_concurrently_by_little_endian(t *testing.T) {
 	insertAndFindConcurrently(t, 7, mgr, keys)
 }
 
-func insertAndFindConcurrently(t *testing.T, routineNum int, mgr *BufMgr, keys [][]byte) {
+func insertAndFindConcurrently(t *testing.T, routineNum int, mgr BufMgr, keys [][]byte) {
 	wg := sync.WaitGroup{}
 	wg.Add(routineNum)
 
@@ -425,6 +452,57 @@ func TestBLTree_restart(t *testing.T) {
 
 	mgr.Close()
 	mgr = NewBufMgr("data/bltree_restart.db", 15, 48)
+	bltree = NewBLTree(mgr)
+
+	secondNum := uint64(2000)
+
+	for i := firstNum; i <= secondNum; i++ {
+		bs := make([]byte, 8)
+		binary.BigEndian.PutUint64(bs, i)
+		if err := bltree.insertKey(bs, 0, [BtId]byte{}, true); err != BLTErrOk {
+			t.Errorf("insertKey() = %v, want %v", err, BLTErrOk)
+		}
+	}
+
+	for i := uint64(0); i <= secondNum; i++ {
+		bs := make([]byte, 8)
+		binary.BigEndian.PutUint64(bs, i)
+		if _, foundKey, _ := bltree.findKey(bs, BtId); bytes.Compare(foundKey, bs) != 0 {
+			t.Errorf("findKey() = %v, want %v", foundKey, bs)
+		}
+	}
+}
+
+func TestBLTree_restart_samehada(t *testing.T) {
+	_ = os.Remove(`data/bltree_restart_samehada.db`)
+	_ = os.Remove("TestBLTree_restart_samehada.db")
+
+	poolSize := uint32(100)
+
+	dm := disk.NewDiskManagerImpl("TestBLTree_restart_samehada.db")
+	bpm := buffer.NewBufferPoolManager(poolSize, dm)
+
+	mgr := NewBufMgrSamehada("data/bltree_restart_samehada.db", 12, 48, bpm, nil)
+	bltree := NewBLTree(mgr)
+
+	firstNum := uint64(1000)
+
+	for i := uint64(0); i <= firstNum; i++ {
+		bs := make([]byte, 8)
+		binary.BigEndian.PutUint64(bs, i)
+		if err := bltree.insertKey(bs, 0, [BtId]byte{}, true); err != BLTErrOk {
+			t.Errorf("insertKey() = %v, want %v", err, BLTErrOk)
+		}
+	}
+
+	mgr.Close()
+	pageZeroShId := mgr.(*BufMgrSamehadaImpl).GetMappedShPageIdOfPageZero()
+	bpm.FlushAllPages()
+	dm.ShutDown()
+
+	dm = disk.NewDiskManagerImpl("TestBLTree_restart_samehada.db")
+	bpm = buffer.NewBufferPoolManager(poolSize, dm)
+	mgr = NewBufMgrSamehada("data/bltree_restart_samehada.db", 12, 48, bpm, pageZeroShId)
 	bltree = NewBLTree(mgr)
 
 	secondNum := uint64(2000)

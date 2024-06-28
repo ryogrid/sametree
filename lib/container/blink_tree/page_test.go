@@ -193,7 +193,7 @@ func TestPage_SetValue(t *testing.T) {
 func TestPutID(t *testing.T) {
 	type args struct {
 		dest [BtId]uint8
-		id   uid
+		id   Uid
 	}
 	tests := []struct {
 		name string
@@ -226,7 +226,7 @@ func TestGetID(t *testing.T) {
 	tests := []struct {
 		name string
 		args args
-		want uid
+		want Uid
 	}{
 		{
 			name: "get id",

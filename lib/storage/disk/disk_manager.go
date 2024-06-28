@@ -20,9 +20,4 @@ type DiskManager interface {
 	ShutDown()
 	Size() int64
 	RemoveDBFile()
-	RemoveLogFile()
-	WriteLog([]byte) error
-	ReadLog([]byte, int32, *uint32) bool
-	GetLogFileSize() int64
-	GCLogFile() error
 }

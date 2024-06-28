@@ -9,7 +9,6 @@ import (
 	"io"
 	"log"
 	"os"
-	"strings"
 	"sync"
 
 	"github.com/ncw/directio"
@@ -19,14 +18,14 @@ import (
 
 // DiskManagerImpl is the disk implementation of DiskManager
 type DiskManagerImpl struct {
-	db           *os.File
-	fileName     string
-	nextPageID   types.PageID
-	numWrites    uint64
-	size         int64
-	flush_log    bool
-	numFlushes   uint64
-	dbFileMutex  *sync.Mutex
+	db          *os.File
+	fileName    string
+	nextPageID  types.PageID
+	numWrites   uint64
+	size        int64
+	flush_log   bool
+	numFlushes  uint64
+	dbFileMutex *sync.Mutex
 }
 
 // NewDiskManagerImpl returns a DiskManager instance
@@ -37,8 +36,6 @@ func NewDiskManagerImpl(dbFilename string) DiskManager {
 		log.Fatalln("can't open db file")
 		return nil
 	}
-
-	period_idx := strings.LastIndex(dbFilename, ".")
 
 	fileInfo, err := file.Stat()
 	if err != nil {
@@ -171,18 +168,6 @@ func (d *DiskManagerImpl) RemoveDBFile() {
 	defer d.dbFileMutex.Unlock()
 
 	err := os.Remove(d.fileName)
-	if err != nil {
-		fmt.Println(err)
-		panic("file remove failed")
-	}
-}
-
-// ATTENTION: this method can be call after calling of Shutdown method
-func (d *DiskManagerImpl) RemoveLogFile() {
-	d.logFileMutex.Lock()
-	defer d.logFileMutex.Unlock()
-
-	err := os.Remove(d.fileName_log)
 	if err != nil {
 		fmt.Println(err)
 		panic("file remove failed")

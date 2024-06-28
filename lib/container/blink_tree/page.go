@@ -78,6 +78,28 @@ func NewPage(pageDataSize uint32) *Page {
 	}
 }
 
+//func (ph *Page) SerializePageHeader() []byte {
+//	buf := make([]byte, PageHeaderSize)
+//	binary.LittleEndian.PutUint32(buf[0:], ph.Cnt)
+//	binary.LittleEndian.PutUint32(buf[4:], ph.Act)
+//	binary.LittleEndian.PutUint32(buf[8:], ph.Min)
+//	binary.LittleEndian.PutUint32(buf[12:], ph.Garbage)
+//	buf[16] = ph.Bits
+//	if ph.Free {
+//		buf[17] = 1
+//	} else {
+//		buf[17] = 0
+//	}
+//	buf[18] = ph.Lvl
+//	if ph.Kill {
+//		buf[19] = 1
+//	} else {
+//		buf[19] = 0
+//	}
+//	copy(buf[20:], ph.Right[:])
+//	return buf
+//}
+
 func (p *Page) slotBytes(i uint32) []byte {
 	off := SlotSize * (i - 1)
 	return p.Data[off : off+SlotSize]
@@ -193,13 +215,13 @@ func (p *Page) FindSlot(key []byte) uint32 {
 	}
 }
 
-func PutID(dest *[BtId]uint8, id uid) {
+func PutID(dest *[BtId]uint8, id Uid) {
 	for i := range dest {
 		dest[BtId-i-1] = uint8(id >> (8 * i))
 	}
 }
 
-func GetIDFromValue(src *[]uint8) uid {
+func GetIDFromValue(src *[]uint8) Uid {
 	if len(*src) < BtId {
 		return 0
 	}
@@ -208,11 +230,11 @@ func GetIDFromValue(src *[]uint8) uid {
 	return GetID(&ret)
 }
 
-func GetID(src *[BtId]uint8) uid {
-	var id uid = 0
+func GetID(src *[BtId]uint8) Uid {
+	var id Uid = 0
 	for i := range src {
 		id <<= 8
-		id |= uid(src[i])
+		id |= Uid(src[i])
 	}
 	return id
 }
