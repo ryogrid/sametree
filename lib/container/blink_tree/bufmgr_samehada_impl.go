@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"io"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -43,7 +42,7 @@ type (
 )
 
 // NewBufMgr creates a new buffer manager
-func NewBufMgrSamehada(name string, bits uint8, nodeMax uint, bpm *buffer.BufferPoolManager) BufMgr {
+func NewBufMgrSamehada(name string, bits uint8, nodeMax uint, bpm *buffer.BufferPoolManager, lastPageZeroId *types.PageID) BufMgr {
 	initit := true
 
 	// determine sanity of page size
@@ -59,50 +58,44 @@ func NewBufMgrSamehada(name string, bits uint8, nodeMax uint, bpm *buffer.Buffer
 		return nil
 	}
 
-	var err error
+	//var err error
 
 	mgr := BufMgrSamehadaImpl{}
-	mgr.idx, err = os.OpenFile(name, os.O_RDWR|os.O_CREATE, 0666)
-	if err != nil {
-		errPrintf("Unable to open btree file: %v\n", err)
-		return nil
-	}
+	//mgr.idx, err = os.OpenFile(name, os.O_RDWR|os.O_CREATE, 0666)
+	//if err != nil {
+	//	errPrintf("Unable to open btree file: %v\n", err)
+	//	return nil
+	//}
 
 	mgr.bpm = bpm
 	mgr.pageIdConvMap = make(map[Uid]types.PageID, 0)
 	mgr.shPagesMap = make(map[types.PageID]*page.Page, 0)
 	mgr.shMetadataMutex = &sync.Mutex{}
 
-	//// data to map to BufMgrSamehadaImpl::pageZero.alloc
-	//var pageZeroBytes []byte
-
-	// read minimum page size to get root info
-	//  to support raw disk partition files
-	//  check if bits == 0 on the disk.
-	if size, err := mgr.idx.Seek(0, io.SeekEnd); size > 0 && err == nil {
-		pageBytes := make([]byte, BtMinPage)
-
-		if n, err := mgr.idx.ReadAt(pageBytes, 0); err == nil && n == BtMinPage {
-			var page Page
-
-			if err := binary.Read(bytes.NewReader(pageBytes), binary.LittleEndian, &page.PageHeader); err != nil {
-				errPrintf("Unable to read btree file: %v\n", err)
-				return nil
-			}
-			page.Data = pageBytes[PageHeaderSize:]
-			//pageZeroBytes = pageBytes
-			mgr.pageZero.alloc = pageBytes
-
-			if page.Bits > 0 {
-				bits = page.Bits
-				initit = false
-			}
-		}
-	}
-
 	mgr.pageSize = 1 << bits
 	mgr.pageBits = bits
 	mgr.pageDataSize = mgr.pageSize - PageHeaderSize
+
+	if lastPageZeroId != nil {
+		var page Page
+
+		shPageZero := mgr.bpm.FetchPage(types.PageID(*lastPageZeroId))
+		if shPageZero == nil {
+			panic("failed to fetch page")
+		}
+
+		page.Data = shPageZero.Data()[PageHeaderSize:]
+		//pageZeroBytes = pageBytes
+		mgr.pageZero.alloc = shPageZero.Data()[:]
+		mgr.deserializePageIdMappingFromPage(&page)
+
+		if err := binary.Read(bytes.NewReader(mgr.pageZero.alloc), binary.LittleEndian, &page.PageHeader); err != nil {
+			errPrintf("Unable to read btree file: %v\n", err)
+			return nil
+		}
+
+		initit = false
+	}
 
 	// calculate number of latch hash table entries
 	// Note: in original code, calculate using HashEntry size
@@ -160,12 +153,6 @@ func NewBufMgrSamehada(name string, bits uint8, nodeMax uint, bpm *buffer.Buffer
 			alloc.Cnt = 1
 			alloc.Act = 1
 
-			//reads := uint(0)
-			//writes := uint(0)
-			//pageId := Uid(MinLvl - lvl)
-			//if err := mgr.NewPage(&PageSet{}, alloc, &reads, &writes, &pageId); err != BLTErrOk {
-			//	panic("failed to create new page")
-			//}
 			if err := mgr.WritePage(alloc, Uid(MinLvl-lvl)); err != BLTErrOk {
 				errPrintf("Unable to create btree page zero\n")
 				return nil
@@ -251,10 +238,10 @@ func (mgr *BufMgrSamehadaImpl) WritePage(page *Page, pageNo Uid) BLTErr {
 
 	// release page to SamehadaDB's buffer pool
 
-	if pageNo == 0 {
-		// ignore page zero
-		return BLTErrOk
-	}
+	//if pageNo == 0 {
+	//	// ignore page zero
+	//	return BLTErrOk
+	//}
 
 	fmt.Println("WritePage pageNo: ", pageNo)
 
@@ -303,6 +290,7 @@ func (mgr *BufMgrSamehadaImpl) Close() {
 	pageZero.PageHeader.Right = *mgr.pageZero.AllocRight()
 	pageZero.PageHeader.Bits = mgr.pageBits
 	pageZero.Data = make([]byte, mgr.pageDataSize)
+	mgr.serializePageIdMappingToPage(pageZero)
 	mgr.WritePage(pageZero, 0)
 
 	// flush dirty pool pages to the btree
@@ -324,8 +312,40 @@ func (mgr *BufMgrSamehadaImpl) Close() {
 	//	errPrintf("Unable to munmap btree page zero: %v\n", err)
 	//}
 
-	if err := mgr.idx.Close(); err != nil {
-		errPrintf("Unable to close btree file: %v\n", err)
+	//if err := mgr.idx.Close(); err != nil {
+	//	errPrintf("Unable to close btree file: %v\n", err)
+	//}
+}
+
+func (mgr *BufMgrSamehadaImpl) serializePageIdMappingToPage(pageZero *Page) {
+	// format
+	// page 0: | page header (26bytes) | mapping count (4bytes) | entry-0 (8bytes) | entry-1 (8bytes) | ... |
+	// mapping count: | mapping count (uint32 4bytes) |
+	// entry: | blink tree page id (uint32 4bytes) | samehada page id (uint32 4bytes) |
+
+	// serialize page mapping data to page zero
+	mappingCnt := 0
+	for pageNo, shPageId := range mgr.pageIdConvMap {
+		buf := make([]byte, 8)
+		binary.LittleEndian.PutUint32(buf[0:], uint32(pageNo))
+		binary.LittleEndian.PutUint32(buf[4:], uint32(shPageId))
+		offset := 4 + pageNo*8
+		copy(pageZero.Data[offset:offset+8], buf)
+		mappingCnt++
+	}
+	buf := make([]byte, 4)
+	binary.LittleEndian.PutUint32(buf, uint32(mappingCnt))
+	copy(pageZero.Data[:4], buf)
+}
+
+func (mgr *BufMgrSamehadaImpl) deserializePageIdMappingFromPage(pageZero *Page) {
+	// deserialize page mapping data from page zero
+	mappingCnt := binary.LittleEndian.Uint32(mgr.pageZero.alloc[PageHeaderSize : PageHeaderSize+4])
+	for i := 0; i < int(mappingCnt); i++ {
+		offset := 4 + i*8
+		pageNo := binary.LittleEndian.Uint32(pageZero.Data[offset : offset+4])
+		shPageId := binary.LittleEndian.Uint32(pageZero.Data[offset+4 : offset+8])
+		mgr.pageIdConvMap[Uid(pageNo)] = types.PageID(shPageId)
 	}
 }
 
@@ -769,4 +789,9 @@ func (mgr *BufMgrSamehadaImpl) GetPageZero() *PageZero {
 }
 func (mgr *BufMgrSamehadaImpl) GetPagePool() []Page {
 	return mgr.pagePool
+}
+
+func (mgr *BufMgrSamehadaImpl) GetMappedShPageIdOfPageZero() *types.PageID {
+	ret := mgr.pageIdConvMap[0]
+	return &ret
 }

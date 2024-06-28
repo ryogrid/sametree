@@ -139,7 +139,7 @@ func TestBLTree_insert_and_find_samehada(t *testing.T) {
 
 	os.Remove("data/bltree_insert_and_find_samehada.db")
 
-	mgr := NewBufMgrSamehada("data/bltree_insert_and_find_samehada.db", 12, 20, bpm)
+	mgr := NewBufMgrSamehada("data/bltree_insert_and_find_samehada.db", 12, 20, bpm, nil)
 	bltree := NewBLTree(mgr)
 	if valLen, _, _ := bltree.findKey([]byte{1, 1, 1, 1}, BtId); valLen >= 0 {
 		t.Errorf("findKey() = %v, want %v", valLen, -1)
@@ -452,6 +452,57 @@ func TestBLTree_restart(t *testing.T) {
 
 	mgr.Close()
 	mgr = NewBufMgr("data/bltree_restart.db", 15, 48)
+	bltree = NewBLTree(mgr)
+
+	secondNum := uint64(2000)
+
+	for i := firstNum; i <= secondNum; i++ {
+		bs := make([]byte, 8)
+		binary.BigEndian.PutUint64(bs, i)
+		if err := bltree.insertKey(bs, 0, [BtId]byte{}, true); err != BLTErrOk {
+			t.Errorf("insertKey() = %v, want %v", err, BLTErrOk)
+		}
+	}
+
+	for i := uint64(0); i <= secondNum; i++ {
+		bs := make([]byte, 8)
+		binary.BigEndian.PutUint64(bs, i)
+		if _, foundKey, _ := bltree.findKey(bs, BtId); bytes.Compare(foundKey, bs) != 0 {
+			t.Errorf("findKey() = %v, want %v", foundKey, bs)
+		}
+	}
+}
+
+func TestBLTree_restart_samehada(t *testing.T) {
+	_ = os.Remove(`data/bltree_restart_samehada.db`)
+	_ = os.Remove("TestBLTree_restart_samehada.db")
+
+	poolSize := uint32(100)
+
+	dm := disk.NewDiskManagerImpl("TestBLTree_restart_samehada.db")
+	bpm := buffer.NewBufferPoolManager(poolSize, dm)
+
+	mgr := NewBufMgrSamehada("data/bltree_restart_samehada.db", 12, 48, bpm, nil)
+	bltree := NewBLTree(mgr)
+
+	firstNum := uint64(1000)
+
+	for i := uint64(0); i <= firstNum; i++ {
+		bs := make([]byte, 8)
+		binary.BigEndian.PutUint64(bs, i)
+		if err := bltree.insertKey(bs, 0, [BtId]byte{}, true); err != BLTErrOk {
+			t.Errorf("insertKey() = %v, want %v", err, BLTErrOk)
+		}
+	}
+
+	mgr.Close()
+	pageZeroShId := mgr.(*BufMgrSamehadaImpl).GetMappedShPageIdOfPageZero()
+	bpm.FlushAllPages()
+	dm.ShutDown()
+
+	dm = disk.NewDiskManagerImpl("TestBLTree_restart_samehada.db")
+	bpm = buffer.NewBufferPoolManager(poolSize, dm)
+	mgr = NewBufMgrSamehada("data/bltree_restart_samehada.db", 12, 48, bpm, pageZeroShId)
 	bltree = NewBLTree(mgr)
 
 	secondNum := uint64(2000)
