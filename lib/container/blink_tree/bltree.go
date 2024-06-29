@@ -1,6 +1,7 @@
 package blink_tree
 
 import (
+	"fmt"
 	"log"
 	"sync/atomic"
 )
@@ -357,6 +358,7 @@ func (tree *BLTree) findKey(key []byte, valMax int) (ret int, foundKey []byte, f
 		// not there if we reach the stopper key
 		if slot == set.page.Cnt {
 			if GetID(&set.page.Right) == 0 {
+				fmt.Println("reached stopper key")
 				break
 			}
 		}
@@ -376,6 +378,9 @@ func (tree *BLTree) findKey(key []byte, valMax int) (ret int, foundKey []byte, f
 				foundValue = make([]byte, valMax)
 				copy(foundValue, val[:])
 				ret = valMax
+			} else {
+				// TODO: for debug
+				panic("keyLen == len(key) but KeyCmp(ptr[:keyLen], key) != 0")
 			}
 		}
 		break

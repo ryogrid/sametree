@@ -125,7 +125,6 @@ func NewBufMgrSamehada(name string, bits uint8, nodeMax uint, bpm *buffer.Buffer
 		if err2 := binary.Write(buf, binary.LittleEndian, alloc.PageHeader); err2 != nil {
 			errPrintf("Unable to output page header as bytes: %v\n", err2)
 		}
-		//pageZeroBytes = buf.Bytes()
 		mgr.pageZero.alloc = buf.Bytes()
 
 		alloc = NewPage(mgr.pageDataSize)
@@ -159,6 +158,8 @@ func NewBufMgrSamehada(name string, bits uint8, nodeMax uint, bpm *buffer.Buffer
 			}
 		}
 
+		//// update next page id
+		//PutID(mgr.pageZero.AllocRight(), MinLvl)
 	}
 
 	//flag := syscall.PROT_READ | syscall.PROT_WRITE
@@ -207,6 +208,9 @@ func (mgr *BufMgrSamehadaImpl) ReadPage(page *Page, pageNo Uid) BLTErr {
 	binary.Read(headerBuf, binary.LittleEndian, &page.PageHeader)
 	page.Data = (*shPage.Data())[PageHeaderSize:]
 	mgr.shMetadataMutex.Lock()
+	if _, ok := mgr.shPagesMap[shPage.GetPageId()]; ok {
+		panic("page already exists")
+	}
 	mgr.shPagesMap[shPage.GetPageId()] = shPage
 	mgr.shMetadataMutex.Unlock()
 
@@ -246,12 +250,24 @@ func (mgr *BufMgrSamehadaImpl) WritePage(page *Page, pageNo Uid) BLTErr {
 	fmt.Println("WritePage pageNo: ", pageNo)
 
 	mgr.shMetadataMutex.Lock()
-	shPageId := mgr.pageIdConvMap[pageNo]
+	isNoEntry := false
+	var shPageId types.PageID
+	ok1 := false
+	if shPageId, ok1 = mgr.pageIdConvMap[pageNo]; !ok1 {
+		isNoEntry = true
+	}
 	var shPage *shpage.Page
 	if _, ok := mgr.shPagesMap[shPageId]; ok {
 		shPage = mgr.shPagesMap[shPageId]
 		delete(mgr.shPagesMap, shPageId)
 	} else {
+		if !isNoEntry {
+			panic("page not found")
+		}
+		isNoEntry = true
+	}
+
+	if isNoEntry {
 		// called for not existing page case
 
 		// create new page on SamehadaDB's buffer pool and db file
@@ -261,8 +277,15 @@ func (mgr *BufMgrSamehadaImpl) WritePage(page *Page, pageNo Uid) BLTErr {
 			panic("failed to create new page")
 		}
 		copy(shPage.Data()[PageHeaderSize:], page.Data)
+		if _, ok := mgr.pageIdConvMap[pageNo]; ok {
+			panic("page already exists")
+		}
 		mgr.pageIdConvMap[pageNo] = shPage.GetPageId()
 		shPageId = shPage.GetPageId()
+		if _, ok := mgr.shPagesMap[shPage.GetPageId()]; ok {
+			panic("page already exists")
+		}
+		mgr.shPagesMap[shPageId] = shPage
 		//// since these pages must not be page out
 		//if pageNo == 0 || pageNo == 1 {
 		//	shPage.IncPinCount()
@@ -582,7 +605,13 @@ func (mgr *BufMgrSamehadaImpl) NewPage(set *PageSet, contents *Page, reads *uint
 		// no need initializes page header here
 		set.page.Data = (*shPage.Data())[PageHeaderSize:]
 		mgr.shMetadataMutex.Lock()
+		if _, ok := mgr.pageIdConvMap[pageNo]; ok {
+			panic("page already exists")
+		}
 		mgr.pageIdConvMap[pageNo] = shPage.GetPageId()
+		if _, ok := mgr.shPagesMap[shPage.GetPageId()]; ok {
+			panic("page already exists")
+		}
 		mgr.shPagesMap[shPage.GetPageId()] = shPage
 		mgr.shMetadataMutex.Unlock()
 		fmt.Println("NewPage (4) page mapping :", pageNo, "and", shPage.GetPageId())
@@ -598,6 +627,7 @@ func (mgr *BufMgrSamehadaImpl) NewPage(set *PageSet, contents *Page, reads *uint
 	MemCpyPage(set.page, contents)
 	set.latch.dirty = true
 	mgr.err = BLTErrOk
+
 	return mgr.err
 }
 
