@@ -179,9 +179,33 @@ func TestBLTree_insert_and_find_many(t *testing.T) {
 	}
 }
 
-func TestBLTree_insert_and_find_concurrently(t *testing.T) {
+func TestBLTree_insert_and_find_concurrently_org(t *testing.T) {
 	_ = os.Remove(`data/insert_and_find_concurrently.db`)
 	mgr := NewBufMgr("data/insert_and_find_concurrently.db", 13, 16*7)
+
+	keyTotal := 1600000
+
+	keys := make([][]byte, keyTotal)
+	for i := 0; i < keyTotal; i++ {
+		bs := make([]byte, 8)
+		binary.BigEndian.PutUint64(bs, uint64(i))
+		keys[i] = bs
+	}
+
+	insertAndFindConcurrently(t, 7, mgr, keys)
+}
+
+func TestBLTree_insert_and_find_concurrently_samehada(t *testing.T) {
+	_ = os.Remove("data/insert_and_find_concurrently_samehada.db")
+	_ = os.Remove("TestBLTree_insert_and_find_concurrently_samehada.db")
+
+	poolSize := uint32(300)
+
+	//dm := disk.NewDiskManagerImpl("TestBLTree_insert_and_find_concurrently_samehada.db")
+	dm := disk.NewVirtualDiskManagerImpl("TestBLTree_insert_and_find_concurrently_samehada.db")
+	bpm := buffer.NewBufferPoolManager(poolSize, dm)
+
+	mgr := NewBufMgrSamehada("data/insert_and_find_concurrently_samehada.db", 12, 16*7, bpm, nil)
 
 	keyTotal := 1600000
 
