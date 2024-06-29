@@ -345,6 +345,50 @@ func TestBLTree_deleteMany(t *testing.T) {
 	}
 }
 
+func TestBLTree_deleteMany_samehada(t *testing.T) {
+	_ = os.Remove(`data/bltree_delete_many_samehada.db`)
+
+	poolSize := uint32(300)
+
+	dm := disk.NewVirtualDiskManagerImpl("TestBLTree_deleteMany_samehada_samehada.db")
+	bpm := buffer.NewBufferPoolManager(poolSize, dm)
+
+	mgr := NewBufMgrSamehada("data/bltree_delete_many_samehada.db", 12, 16*7, bpm, nil)
+	bltree := NewBLTree(mgr)
+
+	keyTotal := 160000
+
+	keys := make([][]byte, keyTotal)
+	for i := 0; i < keyTotal; i++ {
+		bs := make([]byte, 8)
+		binary.LittleEndian.PutUint64(bs, uint64(i))
+		keys[i] = bs
+	}
+
+	for i := range keys {
+		if err := bltree.insertKey(keys[i], 0, [BtId]byte{0, 0, 0, 0, 0, 0}, true); err != BLTErrOk {
+			t.Errorf("insertKey() = %v, want %v", err, BLTErrOk)
+		}
+		if i%2 == 0 {
+			if err := bltree.deleteKey(keys[i], 0); err != BLTErrOk {
+				t.Errorf("deleteKey() = %v, want %v", err, BLTErrOk)
+			}
+		}
+	}
+
+	for i := range keys {
+		if i%2 == 0 {
+			if found, _, _ := bltree.findKey(keys[i], BtId); found != -1 {
+				t.Errorf("findKey() = %v, want %v, key %v", found, -1, keys[i])
+			}
+		} else {
+			if found, _, _ := bltree.findKey(keys[i], BtId); found != 6 {
+				t.Errorf("findKey() = %v, want %v, key %v", found, 6, keys[i])
+			}
+		}
+	}
+}
+
 func TestBLTree_deleteAll(t *testing.T) {
 	_ = os.Remove(`data/bltree_delete_all.db`)
 	mgr := NewBufMgr("data/bltree_delete_all.db", 13, 16*7)

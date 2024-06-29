@@ -378,9 +378,6 @@ func (tree *BLTree) findKey(key []byte, valMax int) (ret int, foundKey []byte, f
 				foundValue = make([]byte, valMax)
 				copy(foundValue, val[:])
 				ret = valMax
-			} else {
-				// TODO: for debug
-				panic("keyLen == len(key) but KeyCmp(ptr[:keyLen], key) != 0")
 			}
 		}
 		break
