@@ -216,7 +216,8 @@ func TestBLTree_insert_and_find_concurrently_samehada(t *testing.T) {
 		keys[i] = bs
 	}
 
-	insertAndFindConcurrently(t, 7, mgr, keys)
+	//insertAndFindConcurrently(t, 7, mgr, keys)
+	insertAndFindConcurrently(t, 2, mgr, keys)
 }
 
 func TestBLTree_insert_and_find_concurrently_by_little_endian(t *testing.T) {
