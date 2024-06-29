@@ -350,7 +350,7 @@ func TestBLTree_deleteMany_samehada(t *testing.T) {
 
 	poolSize := uint32(300)
 
-	dm := disk.NewVirtualDiskManagerImpl("TestBLTree_deleteMany_samehada_samehada.db")
+	dm := disk.NewVirtualDiskManagerImpl("TestBLTree_deleteMany_samehada.db")
 	bpm := buffer.NewBufferPoolManager(poolSize, dm)
 
 	mgr := NewBufMgrSamehada("data/bltree_delete_many_samehada.db", 12, 16*7, bpm, nil)
@@ -419,9 +419,135 @@ func TestBLTree_deleteAll(t *testing.T) {
 	}
 }
 
+func TestBLTree_deleteAll_samehada(t *testing.T) {
+	_ = os.Remove(`data/bltree_delete_all.db`)
+	_ = os.Remove("TestBLTree_deleteAll_samehada.db")
+
+	poolSize := uint32(300)
+
+	dm := disk.NewVirtualDiskManagerImpl("TestBLTree_deleteAll_samehada.db")
+	bpm := buffer.NewBufferPoolManager(poolSize, dm)
+	mgr := NewBufMgrSamehada("data/bltree_delete_all.db", 12, 16*7, bpm, nil)
+	bltree := NewBLTree(mgr)
+
+	keyTotal := 1600000
+
+	keys := make([][]byte, keyTotal)
+	for i := 0; i < keyTotal; i++ {
+		bs := make([]byte, 8)
+		binary.LittleEndian.PutUint64(bs, uint64(i))
+		keys[i] = bs
+	}
+
+	for i := range keys {
+		if err := bltree.insertKey(keys[i], 0, [BtId]byte{0, 0, 0, 0, 0, 0}, true); err != BLTErrOk {
+			t.Errorf("insertKey() = %v, want %v", err, BLTErrOk)
+		}
+	}
+
+	for i := range keys {
+		if err := bltree.deleteKey(keys[i], 0); err != BLTErrOk {
+			t.Errorf("deleteKey() = %v, want %v", err, BLTErrOk)
+		}
+		if found, _, _ := bltree.findKey(keys[i], BtId); found != -1 {
+			t.Errorf("findKey() = %v, want %v, key %v", found, -1, keys[i])
+		}
+	}
+}
+
 func TestBLTree_deleteManyConcurrently(t *testing.T) {
 	_ = os.Remove("data/bltree_delete_many_concurrently.db")
 	mgr := NewBufMgr("data/bltree_delete_many_concurrently.db", 13, 16*7)
+
+	keyTotal := 1600000
+	routineNum := 7
+
+	keys := make([][]byte, keyTotal)
+	for i := 0; i < keyTotal; i++ {
+		bs := make([]byte, 8)
+		binary.LittleEndian.PutUint64(bs, uint64(i))
+		keys[i] = bs
+	}
+
+	wg := sync.WaitGroup{}
+	wg.Add(routineNum)
+
+	start := time.Now()
+	for r := 0; r < routineNum; r++ {
+		go func(n int) {
+			bltree := NewBLTree(mgr)
+			for i := 0; i < keyTotal; i++ {
+				if i%routineNum != n {
+					continue
+				}
+				if err := bltree.insertKey(keys[i], 0, [BtId]byte{}, true); err != BLTErrOk {
+					t.Errorf("in goroutine%d insertKey() = %v, want %v", n, err, BLTErrOk)
+				}
+
+				if i%2 == (n % 2) {
+					if err := bltree.deleteKey(keys[i], 0); err != BLTErrOk {
+						t.Errorf("deleteKey() = %v, want %v", err, BLTErrOk)
+					}
+				}
+
+				if i%2 == (n % 2) {
+					if found, _, _ := bltree.findKey(keys[i], BtId); found != -1 {
+						t.Errorf("findKey() = %v, want %v, key %v", found, -1, keys[i])
+						panic("findKey() != -1")
+					}
+				} else {
+					if found, _, _ := bltree.findKey(keys[i], BtId); found != 6 {
+						t.Errorf("findKey() = %v, want %v, key %v", found, 6, keys[i])
+						panic("findKey() != 6")
+					}
+				}
+			}
+
+			wg.Done()
+		}(r)
+	}
+	wg.Wait()
+	t.Logf("insert %d keys and delete skip one concurrently. duration =  %v", keyTotal, time.Since(start))
+
+	wg = sync.WaitGroup{}
+	wg.Add(routineNum)
+
+	start = time.Now()
+	for r := 0; r < routineNum; r++ {
+		go func(n int) {
+			bltree := NewBLTree(mgr)
+			for i := 0; i < keyTotal; i++ {
+				if i%routineNum != n {
+					continue
+				}
+				if i%2 == (n % 2) {
+					if found, _, _ := bltree.findKey(keys[i], BtId); found != -1 {
+						t.Errorf("findKey() = %v, want %v, key %v", found, -1, keys[i])
+					}
+				} else {
+					if found, _, _ := bltree.findKey(keys[i], BtId); found != 6 {
+						t.Errorf("findKey() = %v, want %v, key %v", found, 6, keys[i])
+					}
+				}
+			}
+
+			wg.Done()
+		}(r)
+	}
+	wg.Wait()
+
+	t.Logf("find %d keys. duration = %v", keyTotal, time.Since(start))
+}
+
+func TestBLTree_deleteManyConcurrently_samehada(t *testing.T) {
+	_ = os.Remove("data/bltree_delete_many_concurrently.db")
+	_ = os.Remove("TestBLTree_deleteManyConcurrently_samehada.db")
+
+	poolSize := uint32(300)
+
+	dm := disk.NewVirtualDiskManagerImpl("TestBLTree_deleteManyConcurrently_samehada.db")
+	bpm := buffer.NewBufferPoolManager(poolSize, dm)
+	mgr := NewBufMgrSamehada("data/bltree_delete_many_concurrently.db", 12, 16*7, bpm, nil)
 
 	keyTotal := 1600000
 	routineNum := 7
