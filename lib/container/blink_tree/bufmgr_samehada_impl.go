@@ -263,7 +263,10 @@ func (mgr *BufMgrSamehadaImpl) WritePage(page *Page, pageNo Uid) BLTErr {
 		copy(shPage.Data()[PageHeaderSize:], page.Data)
 		mgr.pageIdConvMap[pageNo] = shPage.GetPageId()
 		shPageId = shPage.GetPageId()
-
+		//// since these pages must not be page out
+		//if pageNo == 0 || pageNo == 1 {
+		//	shPage.IncPinCount()
+		//}
 		//fmt.Println("WritePage: page not found pageNo: ", pageNo, " shPageId: ", shPageId)
 		//panic("page not found")
 	}
@@ -487,14 +490,17 @@ func (mgr *BufMgrSamehadaImpl) PinLatch(pageNo Uid, loadIt bool, reads *uint, wr
 		//  update permanent page area in btree from buffer pool
 		page := mgr.pagePool[slot]
 
-		if latch.dirty {
-			if err := mgr.WritePage(&page, latch.pageNo); err != BLTErrOk {
-				return nil
-			} else {
-				latch.dirty = false
-				*writes++
-			}
+		//if latch.dirty {
+		if err := mgr.WritePage(&page, latch.pageNo); err != BLTErrOk {
+			return nil
+		} else {
+			// for relase SamehadaDB page's memory
+			page.Data = nil
+
+			latch.dirty = false
+			*writes++
 		}
+		//}
 
 		//  unlink our available slot from its hash chain
 		if latch.prev > 0 {
