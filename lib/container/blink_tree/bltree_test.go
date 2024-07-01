@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"math"
 	"os"
 	"sync"
 	"testing"
@@ -715,5 +716,54 @@ func TestBLTree_restart_samehada(t *testing.T) {
 		if _, foundKey, _ := bltree.findKey(bs, BtId); bytes.Compare(foundKey, bs) != 0 {
 			t.Errorf("findKey() = %v, want %v", foundKey, bs)
 		}
+	}
+}
+
+func TestBLTree_insert_and_range_scan_samehada(t *testing.T) {
+	poolSize := uint32(10)
+
+	dm := disk.NewDiskManagerTest()
+	bpm := buffer.NewBufferPoolManager(poolSize, dm)
+
+	os.Remove("data/bltree_insert_and_range_scan_samehada.db")
+
+	mgr := NewBufMgrSamehada("TestBLTree_insert_and_range_scan_samehada.db", 12, 20, bpm, nil)
+	bltree := NewBLTree(mgr)
+
+	keyTotal := 10
+	keys := make([][]byte, keyTotal)
+	for i := 1; i < keyTotal; i++ {
+		key := make([]byte, 8)
+		binary.LittleEndian.PutUint64(key, uint64(i))
+		val := make([]byte, 4)
+		binary.LittleEndian.PutUint32(val, uint32(i))
+		if err := bltree.insertKey(key, 0, [BtId]byte{val[3], val[2], val[1], val[0], 0, 1}, true); err != BLTErrOk {
+			t.Errorf("insertKey() = %v, want %v", err, BLTErrOk)
+		}
+		keys[i] = key
+	}
+
+	itrCnt := 0
+	bltree.err = -1
+	for slot := bltree.startKey([]byte{0, 0, 0, 0, 0, 0, 0, 0}); bltree.err != BLTErrOk; slot = bltree.nextKey(slot) {
+		slotType := bltree.cursor.Typ(slot)
+		if slotType != Unique {
+			continue
+		}
+		key := bltree.cursor.Key(slot)
+		if bytes.Compare(key, keys[itrCnt+1]) != 0 {
+			t.Errorf("key = %v, want %v", key, keys[itrCnt])
+		}
+		keyBuf := bytes.NewBuffer(key)
+		readKey := uint64(math.MaxUint64)
+		binary.Read(keyBuf, binary.LittleEndian, &readKey)
+		fmt.Println("readKey: ", readKey)
+
+		val := bltree.cursor.Key(slot)
+		valBuf := bytes.NewBuffer(val)
+		readVal := uint32(math.MaxUint32)
+		binary.Read(valBuf, binary.LittleEndian, &readVal)
+		fmt.Println("readVal: ", readKey)
+		itrCnt++
 	}
 }
