@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"math/rand"
 	"os"
 	"sync"
 	"testing"
@@ -735,14 +736,26 @@ func TestBLTree_insert_and_range_scan_samehada(t *testing.T) {
 	for i := 1; i < keyTotal; i++ {
 		key := make([]byte, 8)
 		binary.LittleEndian.PutUint64(key, uint64(i))
+		keys[i-1] = key
+	}
+
+	// generate shuffled keys
+	keysRandom := make([][]byte, keyTotal-1)
+	copy(keysRandom, keys)
+	randGen := rand.New(rand.NewSource(time.Now().UnixNano()))
+	randGen.Shuffle(len(keysRandom), func(i, j int) { keysRandom[i], keysRandom[j] = keysRandom[j], keysRandom[i] })
+
+	// insert in shuffled order
+	for i := 0; i < keyTotal-1; i++ {
+		key := keysRandom[i]
 		val := make([]byte, 4)
 		binary.LittleEndian.PutUint32(val, uint32(i))
 		if err := bltree.insertKey(key, 0, [BtId]byte{val[3], val[2], val[1], val[0], 0, 1}, true); err != BLTErrOk {
 			t.Errorf("insertKey() = %v, want %v", err, BLTErrOk)
 		}
-		keys[i] = key
 	}
 
+	// range scan and check keys are sorted
 	itrCnt := 0
 	bltree.err = -1
 	for slot := bltree.startKey([]byte{0, 0, 0, 0, 0, 0, 0, 0}); bltree.err != BLTErrOk; slot = bltree.nextKey(slot) {
@@ -751,7 +764,7 @@ func TestBLTree_insert_and_range_scan_samehada(t *testing.T) {
 			continue
 		}
 		key := bltree.cursor.Key(slot)
-		if bytes.Compare(key, keys[itrCnt+1]) != 0 {
+		if bytes.Compare(key, keys[itrCnt]) != 0 {
 			t.Errorf("key = %v, want %v", key, keys[itrCnt])
 		}
 		keyBuf := bytes.NewBuffer(key)
