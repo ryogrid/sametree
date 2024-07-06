@@ -73,7 +73,7 @@ func TestBLTree_collapseRoot(t *testing.T) {
 
 func TestBLTree_cleanPage_full_page(t *testing.T) {
 	_ = os.Remove("data/bltree_clean_page.db")
-	mgr := NewBufMgr("data/bltree_clean_page.db", 15, 16*7)
+	mgr := NewBufMgr("data/bltree_clean_page.db", 15, HASH_TABLE_ENTRY_CHAIN_LEN*7)
 	bltree := NewBLTree(mgr)
 
 	f, err := os.OpenFile("testdata/page_for_clean", os.O_RDWR, 0666)
@@ -183,7 +183,7 @@ func TestBLTree_insert_and_find_many(t *testing.T) {
 
 func TestBLTree_insert_and_find_concurrently_org(t *testing.T) {
 	_ = os.Remove(`data/insert_and_find_concurrently.db`)
-	mgr := NewBufMgr("data/insert_and_find_concurrently.db", 13, 16*7)
+	mgr := NewBufMgr("data/insert_and_find_concurrently.db", 13, HASH_TABLE_ENTRY_CHAIN_LEN*7)
 
 	keyTotal := 1600000
 
@@ -207,7 +207,7 @@ func TestBLTree_insert_and_find_concurrently_samehada(t *testing.T) {
 	dm := disk.NewVirtualDiskManagerImpl("TestBLTree_insert_and_find_concurrently_samehada.db")
 	bpm := buffer.NewBufferPoolManager(poolSize, dm)
 
-	mgr := NewBufMgrSamehada("data/insert_and_find_concurrently_samehada.db", 12, 16*7, bpm, nil)
+	mgr := NewBufMgrSamehada("data/insert_and_find_concurrently_samehada.db", 12, HASH_TABLE_ENTRY_CHAIN_LEN*7, bpm, nil)
 
 	keyTotal := 1600000
 
@@ -223,7 +223,7 @@ func TestBLTree_insert_and_find_concurrently_samehada(t *testing.T) {
 
 func TestBLTree_insert_and_find_concurrently_by_little_endian(t *testing.T) {
 	_ = os.Remove(`data/insert_and_find_concurrently_by_little_endian.db`)
-	mgr := NewBufMgr("data/insert_and_find_concurrently_by_little_endian.db", 13, 16*7)
+	mgr := NewBufMgr("data/insert_and_find_concurrently_by_little_endian.db", 13, HASH_TABLE_ENTRY_CHAIN_LEN*7)
 
 	keyTotal := 1600000
 
@@ -311,7 +311,7 @@ func TestBLTree_delete(t *testing.T) {
 
 func TestBLTree_deleteMany(t *testing.T) {
 	_ = os.Remove(`data/bltree_delete_many.db`)
-	mgr := NewBufMgr("data/bltree_delete_many.db", 13, 16*7)
+	mgr := NewBufMgr("data/bltree_delete_many.db", 13, HASH_TABLE_ENTRY_CHAIN_LEN*7)
 	bltree := NewBLTree(mgr)
 
 	keyTotal := 160000
@@ -355,7 +355,7 @@ func TestBLTree_deleteMany_samehada(t *testing.T) {
 	dm := disk.NewVirtualDiskManagerImpl("TestBLTree_deleteMany_samehada.db")
 	bpm := buffer.NewBufferPoolManager(poolSize, dm)
 
-	mgr := NewBufMgrSamehada("data/bltree_delete_many_samehada.db", 12, 16*7, bpm, nil)
+	mgr := NewBufMgrSamehada("data/bltree_delete_many_samehada.db", 12, HASH_TABLE_ENTRY_CHAIN_LEN*7, bpm, nil)
 	bltree := NewBLTree(mgr)
 
 	keyTotal := 160000
@@ -393,7 +393,7 @@ func TestBLTree_deleteMany_samehada(t *testing.T) {
 
 func TestBLTree_deleteAll(t *testing.T) {
 	_ = os.Remove(`data/bltree_delete_all.db`)
-	mgr := NewBufMgr("data/bltree_delete_all.db", 13, 16*7)
+	mgr := NewBufMgr("data/bltree_delete_all.db", 13, HASH_TABLE_ENTRY_CHAIN_LEN*7)
 	bltree := NewBLTree(mgr)
 
 	keyTotal := 1600000
@@ -429,7 +429,7 @@ func TestBLTree_deleteAll_samehada(t *testing.T) {
 
 	dm := disk.NewVirtualDiskManagerImpl("TestBLTree_deleteAll_samehada.db")
 	bpm := buffer.NewBufferPoolManager(poolSize, dm)
-	mgr := NewBufMgrSamehada("data/bltree_delete_all.db", 12, 16*7, bpm, nil)
+	mgr := NewBufMgrSamehada("data/bltree_delete_all.db", 12, HASH_TABLE_ENTRY_CHAIN_LEN*7, bpm, nil)
 	bltree := NewBLTree(mgr)
 
 	keyTotal := 1600000
@@ -459,7 +459,7 @@ func TestBLTree_deleteAll_samehada(t *testing.T) {
 
 func TestBLTree_deleteManyConcurrently(t *testing.T) {
 	_ = os.Remove("data/bltree_delete_many_concurrently.db")
-	mgr := NewBufMgr("data/bltree_delete_many_concurrently.db", 13, 16*7)
+	mgr := NewBufMgr("data/bltree_delete_many_concurrently.db", 13, HASH_TABLE_ENTRY_CHAIN_LEN*7)
 
 	keyTotal := 1600000
 	routineNum := 7
@@ -549,7 +549,7 @@ func TestBLTree_deleteManyConcurrently_samehada(t *testing.T) {
 
 	dm := disk.NewVirtualDiskManagerImpl("TestBLTree_deleteManyConcurrently_samehada.db")
 	bpm := buffer.NewBufferPoolManager(poolSize, dm)
-	mgr := NewBufMgrSamehada("data/bltree_delete_many_concurrently.db", 12, 16*7, bpm, nil)
+	mgr := NewBufMgrSamehada("data/bltree_delete_many_concurrently.db", 12, HASH_TABLE_ENTRY_CHAIN_LEN*7, bpm, nil)
 
 	keyTotal := 1600000
 	routineNum := 7

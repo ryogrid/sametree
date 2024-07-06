@@ -779,7 +779,8 @@ func (tree *BLTree) newDup() Uid {
 	return Uid(atomic.AddUint64(&tree.mgr.GetPageZero().dups, 1))
 }
 
-// insertKey insert new key into the btree at given level. either add a new key or update/add an existing one
+// Note: currently, uniq argument is always true
+// insertKey insert new key into the btree at a given level. either add a new key or update/add an existing one
 func (tree *BLTree) insertKey(key []byte, lvl uint8, value [BtId]byte, uniq bool) BLTErr {
 	var slot uint32
 	var keyLen uint8

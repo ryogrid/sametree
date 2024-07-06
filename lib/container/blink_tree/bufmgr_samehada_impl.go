@@ -13,6 +13,8 @@ import (
 	"github.com/ryogrid/sametree/lib/types"
 )
 
+const HASH_TABLE_ENTRY_CHAIN_LEN = 16
+
 type (
 	BufMgrSamehadaImpl struct {
 		pageSize     uint32 // page size
@@ -52,7 +54,7 @@ func NewBufMgrSamehada(name string, bits uint8, nodeMax uint, bpm *buffer.Buffer
 	}
 
 	// determine sanity of buffer pool
-	if nodeMax < 16 {
+	if nodeMax < HASH_TABLE_ENTRY_CHAIN_LEN {
 		errPrintf("Buffer pool too small: %d\n", nodeMax)
 		return nil
 	}
@@ -98,8 +100,8 @@ func NewBufMgrSamehada(name string, bits uint8, nodeMax uint, bpm *buffer.Buffer
 
 	// calculate number of latch hash table entries
 	// Note: in original code, calculate using HashEntry size
-	// `mgr->nlatchpage = (nodemax/16 * sizeof(HashEntry) + mgr->page_size - 1) / mgr->page_size;`
-	mgr.latchHash = nodeMax / 16
+	// `mgr->nlatchpage = (nodemax/HASH_TABLE_ENTRY_CHAIN_LEN * sizeof(HashEntry) + mgr->page_size - 1) / mgr->page_size;`
+	mgr.latchHash = nodeMax / HASH_TABLE_ENTRY_CHAIN_LEN
 
 	mgr.latchTotal = nodeMax
 

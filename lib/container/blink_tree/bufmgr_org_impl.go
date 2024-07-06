@@ -57,7 +57,7 @@ func NewBufMgr(name string, bits uint8, nodeMax uint) BufMgr {
 	}
 
 	// determine sanity of buffer pool
-	if nodeMax < 16 {
+	if nodeMax < HASH_TABLE_ENTRY_CHAIN_LEN {
 		errPrintf("Buffer pool too small: %d\n", nodeMax)
 		return nil
 	}
@@ -103,8 +103,8 @@ func NewBufMgr(name string, bits uint8, nodeMax uint) BufMgr {
 
 	// calculate number of latch hash table entries
 	// Note: in original code, calculate using HashEntry size
-	// `mgr->nlatchpage = (nodemax/16 * sizeof(HashEntry) + mgr->page_size - 1) / mgr->page_size;`
-	mgr.latchHash = nodeMax / 16
+	// `mgr->nlatchpage = (nodemax/HASH_TABLE_ENTRY_CHAIN_LEN * sizeof(HashEntry) + mgr->page_size - 1) / mgr->page_size;`
+	mgr.latchHash = nodeMax / HASH_TABLE_ENTRY_CHAIN_LEN
 
 	mgr.latchTotal = nodeMax
 
