@@ -3,6 +3,7 @@ package blink_tree
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -758,6 +759,7 @@ func (mgr *BufMgrSamehadaImpl) LoadPage(set *PageSet, key []byte, lvl uint8, loc
 			}
 
 			pageNo = GetIDFromValue(set.page.Value(slot))
+			fmt.Println("LoadPage: move from ", set.latch.pageNo, "(", set.page.Lvl, ") to ", pageNo, "(", drill-1, ")")
 			drill--
 			continue
 		}

@@ -159,10 +159,40 @@ func TestBLTree_insert_and_find_samehada(t *testing.T) {
 
 func TestBLTree_insert_and_find_many(t *testing.T) {
 	_ = os.Remove(`data/bltree_insert_and_find_many.db`)
-	mgr := NewBufMgr("data/bltree_insert_and_find_many.db", 13, 48)
+	mgr := NewBufMgr("data/bltree_insert_and_find_many.db", 12, 36)
 	bltree := NewBLTree(mgr)
 
 	num := uint64(160000)
+
+	for i := uint64(0); i < num; i++ {
+		bs := make([]byte, 8)
+		binary.BigEndian.PutUint64(bs, i)
+		if err := bltree.insertKey(bs, 0, [BtId]byte{}, true); err != BLTErrOk {
+			t.Errorf("insertKey() = %v, want %v", err, BLTErrOk)
+		}
+	}
+
+	for i := uint64(0); i < num; i++ {
+		bs := make([]byte, 8)
+		binary.BigEndian.PutUint64(bs, i)
+		if _, foundKey, _ := bltree.findKey(bs, BtId); bytes.Compare(foundKey, bs) != 0 {
+			t.Errorf("findKey() = %v, want %v", foundKey, bs)
+		}
+	}
+}
+
+func TestBLTree_insert_and_find_many_samehada(t *testing.T) {
+	_ = os.Remove(`data/bltree_insert_and_find_many_samehada.db`)
+
+	poolSize := uint32(100)
+
+	dm := disk.NewDiskManagerTest()
+	bpm := buffer.NewBufferPoolManager(poolSize, dm)
+
+	mgr := NewBufMgrSamehada("data/bltree_insert_and_find_many_samehada.db", 12, 36, bpm, nil)
+	bltree := NewBLTree(mgr)
+
+	num := uint64(1600000)
 
 	for i := uint64(0); i < num; i++ {
 		bs := make([]byte, 8)
