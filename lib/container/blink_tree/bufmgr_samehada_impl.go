@@ -9,7 +9,6 @@ import (
 	"sync/atomic"
 
 	"github.com/ryogrid/sametree/lib/storage/buffer"
-	"github.com/ryogrid/sametree/lib/storage/page"
 	shpage "github.com/ryogrid/sametree/lib/storage/page"
 	"github.com/ryogrid/sametree/lib/types"
 )
@@ -34,10 +33,7 @@ type (
 		latchSets     []LatchSet  // mapped latch set from buffer pool
 		pagePool      []Page      // mapped to the buffer pool pages
 		bpm           *buffer.BufferPoolManager
-		pageIdConvMap map[Uid]types.PageID // page id conversion map
-		// entry is deleted at WritePage
-		shPagesMap      map[types.PageID]*page.Page
-		shMetadataMutex *sync.Mutex
+		pageIdConvMap *sync.Map // page id conversion map: Uid -> types.PageID
 
 		err BLTErr // last error
 	}
@@ -70,9 +66,7 @@ func NewBufMgrSamehada(name string, bits uint8, nodeMax uint, bpm *buffer.Buffer
 	}
 
 	mgr.bpm = bpm
-	mgr.pageIdConvMap = make(map[Uid]types.PageID, 0)
-	mgr.shPagesMap = make(map[types.PageID]*page.Page, 0)
-	mgr.shMetadataMutex = &sync.Mutex{}
+	mgr.pageIdConvMap = new(sync.Map)
 
 	mgr.pageSize = 1 << bits
 	mgr.pageBits = bits
@@ -202,10 +196,8 @@ func (mgr *BufMgrSamehadaImpl) ReadPage(page *Page, pageNo Uid) BLTErr {
 
 	fmt.Println("ReadPage pageNo: ", pageNo)
 
-	mgr.shMetadataMutex.Lock()
-	if shPageId, ok := mgr.pageIdConvMap[pageNo]; ok {
-		mgr.shMetadataMutex.Unlock()
-		shPage := mgr.bpm.FetchPage(shPageId)
+	if shPageId, ok := mgr.pageIdConvMap.Load(pageNo); ok {
+		shPage := mgr.bpm.FetchPage(shPageId.(types.PageID))
 		if shPage == nil {
 			panic("failed to fetch page")
 		}
@@ -253,32 +245,16 @@ func (mgr *BufMgrSamehadaImpl) WritePage(page *Page, pageNo Uid, isDirty bool) B
 
 	//fmt.Println("WritePage pageNo: ", pageNo)
 
-	isNoEntry := false
 	shPageId := types.PageID(-1)
-	ok1 := false
-	mgr.shMetadataMutex.Lock()
-	if shPageId, ok1 = mgr.pageIdConvMap[pageNo]; !ok1 {
+	isNoEntry := false
+	if val, ok := mgr.pageIdConvMap.Load(pageNo); !ok {
 		isNoEntry = true
 		shPageId = types.PageID(-1)
-	}
-	var shPage *shpage.Page
-	if _, ok := mgr.shPagesMap[shPageId]; ok {
-		if isNoEntry {
-			panic("illegal state")
-		}
-		shPage = mgr.shPagesMap[shPageId]
-		delete(mgr.shPagesMap, shPageId)
-		mgr.shMetadataMutex.Unlock()
 	} else {
-		mgr.shMetadataMutex.Unlock()
-		if !isNoEntry {
-			// already page relesed to SamehadaDB's buffer pool
-			//panic("page not found")
-			fmt.Println("WritePage: page not found... : ", pageNo)
-			return BLTErrOk
-		}
-		isNoEntry = true
+		shPageId = val.(types.PageID)
 	}
+
+	var shPage *shpage.Page = nil
 
 	if isNoEntry {
 		// called for not existing page case
@@ -295,17 +271,22 @@ func (mgr *BufMgrSamehadaImpl) WritePage(page *Page, pageNo Uid, isDirty bool) B
 		binary.Write(headerBuf, binary.LittleEndian, page.PageHeader)
 		headerBytes := headerBuf.Bytes()
 		copy(shPage.Data()[:PageHeaderSize], headerBytes)
-		mgr.shMetadataMutex.Lock()
-		if _, ok := mgr.pageIdConvMap[pageNo]; ok {
+		if _, ok := mgr.pageIdConvMap.Load(pageNo); ok {
 			panic("page already exists")
 		}
-		mgr.pageIdConvMap[pageNo] = shPage.GetPageId()
 		shPageId = shPage.GetPageId()
-		if _, ok := mgr.shPagesMap[shPage.GetPageId()]; ok {
-			panic("page already exists")
+		mgr.pageIdConvMap.Store(pageNo, shPageId)
+	}
+
+	if shPage == nil {
+		shPage = mgr.bpm.FetchPage(shPageId)
+		if shPage == nil {
+			panic("failed to fetch page")
 		}
-		mgr.shPagesMap[shPageId] = shPage
-		mgr.shMetadataMutex.Unlock()
+		// decrement pin count increased at FetchPage
+		if shPage.PinCount() == 2 {
+			shPage.DecPinCount()
+		}
 	}
 
 	headerBuf := bytes.NewBuffer(make([]byte, 0, PageHeaderSize))
@@ -365,14 +346,31 @@ func (mgr *BufMgrSamehadaImpl) serializePageIdMappingToPage(pageZero *Page) {
 
 	// serialize page mapping data to page zero
 	mappingCnt := 0
-	for pageNo, shPageId := range mgr.pageIdConvMap {
+
+	itrFunc := func(key, value interface{}) bool {
+		pageNo := key.(Uid)
+		shPageId := value.(types.PageID)
 		buf := make([]byte, 8)
 		binary.LittleEndian.PutUint32(buf[0:], uint32(pageNo))
 		binary.LittleEndian.PutUint32(buf[4:], uint32(shPageId))
 		offset := 4 + pageNo*8
 		copy(pageZero.Data[offset:offset+8], buf)
 		mappingCnt++
+		return true
 	}
+
+	mgr.pageIdConvMap.Range(itrFunc)
+
+	/*
+		for pageNo, shPageId := range mgr.pageIdConvMap {
+			buf := make([]byte, 8)
+			binary.LittleEndian.PutUint32(buf[0:], uint32(pageNo))
+			binary.LittleEndian.PutUint32(buf[4:], uint32(shPageId))
+			offset := 4 + pageNo*8
+			copy(pageZero.Data[offset:offset+8], buf)
+			mappingCnt++
+		}
+	*/
 	buf := make([]byte, 4)
 	binary.LittleEndian.PutUint32(buf, uint32(mappingCnt))
 	copy(pageZero.Data[:4], buf)
@@ -385,7 +383,7 @@ func (mgr *BufMgrSamehadaImpl) deserializePageIdMappingFromPage(pageZero *Page) 
 		offset := 4 + i*8
 		pageNo := binary.LittleEndian.Uint32(pageZero.Data[offset : offset+4])
 		shPageId := binary.LittleEndian.Uint32(pageZero.Data[offset+4 : offset+8])
-		mgr.pageIdConvMap[Uid(pageNo)] = types.PageID(shPageId)
+		mgr.pageIdConvMap.Store(Uid(pageNo), types.PageID(shPageId))
 	}
 }
 
@@ -821,6 +819,10 @@ func (mgr *BufMgrSamehadaImpl) GetPagePool() []Page {
 }
 
 func (mgr *BufMgrSamehadaImpl) GetMappedShPageIdOfPageZero() *types.PageID {
-	ret := mgr.pageIdConvMap[0]
-	return &ret
+	if val, ok := mgr.pageIdConvMap.Load(0); ok {
+		ret := val.(types.PageID)
+		return &ret
+	} else {
+		panic("page zero mapping not found")
+	}
 }
