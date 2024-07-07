@@ -293,6 +293,7 @@ func (mgr *BufMgrSamehadaImpl) WritePage(page *Page, pageNo Uid, isDirty bool) B
 	binary.Write(headerBuf, binary.LittleEndian, page.PageHeader)
 	headerBytes := headerBuf.Bytes()
 	copy(shPage.Data()[:PageHeaderSize], headerBytes)
+	copy(shPage.Data()[PageHeaderSize:], page.Data)
 	mgr.bpm.UnpinPage(shPageId, isDirty)
 	fmt.Println("WritePage: unpin paged. pageNo:", pageNo, "shPageId:", shPageId, "pin count: ", shPage.PinCount())
 
