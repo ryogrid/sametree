@@ -113,7 +113,7 @@ func NewBufMgr(name string, bits uint8, nodeMax uint) BufMgr {
 		alloc.Bits = mgr.pageBits
 		PutID(&alloc.Right, MinLvl+1)
 
-		if mgr.WritePage(alloc, 0) != BLTErrOk {
+		if mgr.WritePage(alloc, 0, true) != BLTErrOk {
 			errPrintf("Unable to create btree page zero\n")
 			mgr.Close()
 			return nil
@@ -151,7 +151,7 @@ func NewBufMgr(name string, bits uint8, nodeMax uint) BufMgr {
 			alloc.Cnt = 1
 			alloc.Act = 1
 
-			if err := mgr.WritePage(alloc, Uid(MinLvl-lvl)); err != BLTErrOk {
+			if err := mgr.WritePage(alloc, Uid(MinLvl-lvl), true); err != BLTErrOk {
 				errPrintf("Unable to create btree page zero\n")
 				return nil
 			}
@@ -202,7 +202,7 @@ func (mgr *BufMgrOrgImpl) ReadPage(page *Page, pageNo Uid) BLTErr {
 
 // writePage writes a page to permanent location in BLTree file,
 // and clear the dirty bit (← clear していない...)
-func (mgr *BufMgrOrgImpl) WritePage(page *Page, pageNo Uid) BLTErr {
+func (mgr *BufMgrOrgImpl) WritePage(page *Page, pageNo Uid, isDirty bool) BLTErr {
 	fmt.Println("WritePage pageNo: ", pageNo)
 
 	off := pageNo << mgr.pageBits
@@ -237,7 +237,7 @@ func (mgr *BufMgrOrgImpl) Close() {
 	pageZero := NewPage(mgr.pageDataSize)
 	pageZero.PageHeader.Right = *mgr.pageZero.AllocRight()
 	pageZero.PageHeader.Bits = mgr.pageBits
-	mgr.WritePage(pageZero, 0)
+	mgr.WritePage(pageZero, 0, true)
 
 	// flush dirty pool pages to the btree
 	var slot uint32
@@ -246,7 +246,7 @@ func (mgr *BufMgrOrgImpl) Close() {
 		latch := &mgr.latchSets[slot]
 
 		if latch.dirty {
-			mgr.WritePage(page, latch.pageNo)
+			mgr.WritePage(page, latch.pageNo, true)
 			latch.dirty = false
 			num++
 		}
@@ -402,7 +402,7 @@ func (mgr *BufMgrOrgImpl) PinLatch(pageNo Uid, loadIt bool, reads *uint, writes 
 		page := mgr.pagePool[slot]
 
 		if latch.dirty {
-			if err := mgr.WritePage(&page, latch.pageNo); err != BLTErrOk {
+			if err := mgr.WritePage(&page, latch.pageNo, true); err != BLTErrOk {
 				return nil
 			} else {
 				latch.dirty = false

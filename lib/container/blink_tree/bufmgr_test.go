@@ -212,7 +212,7 @@ func TestBufMgr_PinLatch(t *testing.T) {
 			if tt.args.pageNo > 2 {
 				// if pageNo is over 2, we need to write the page to disk
 				p := NewPage(mgr.GetPageDataSize())
-				mgr.WritePage(p, tt.args.pageNo)
+				mgr.WritePage(p, tt.args.pageNo, true)
 			}
 			latch := mgr.PinLatch(tt.args.pageNo, tt.args.loadIt, &tt.args.reads, &tt.args.writes)
 			if latch == nil && tt.wantLatched {
