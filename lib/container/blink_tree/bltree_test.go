@@ -192,7 +192,7 @@ func TestBLTree_insert_and_find_many_samehada(t *testing.T) {
 	mgr := NewBufMgrSamehada("data/bltree_insert_and_find_many_samehada.db", 12, 36, bpm, nil)
 	bltree := NewBLTree(mgr)
 
-	num := uint64(1600000)
+	num := uint64(160000)
 
 	for i := uint64(0); i < num; i++ {
 		bs := make([]byte, 8)

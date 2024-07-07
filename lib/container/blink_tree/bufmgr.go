@@ -2,7 +2,7 @@ package blink_tree
 
 type BufMgr interface {
 	ReadPage(page *Page, pageNo Uid) BLTErr
-	WritePage(page *Page, pageNo Uid) BLTErr
+	WritePage(page *Page, pageNo Uid, isDirty bool) BLTErr
 	Close()
 	PoolAudit()
 	LatchLink(hashIdx uint, slot uint, pageNo Uid, loadIt bool, reads *uint) BLTErr
