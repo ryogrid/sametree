@@ -10,6 +10,7 @@ import (
 
 	"github.com/ryogrid/sametree/lib/storage/buffer"
 	"github.com/ryogrid/sametree/lib/storage/page"
+	shpage "github.com/ryogrid/sametree/lib/storage/page"
 	"github.com/ryogrid/sametree/lib/types"
 )
 
@@ -109,13 +110,14 @@ func NewBufMgrSamehada(name string, bits uint8, nodeMax uint, bpm *buffer.Buffer
 	mgr.latchSets = make([]LatchSet, mgr.latchTotal)
 	mgr.pagePool = make([]Page, mgr.latchTotal)
 
+	var allocBytes []byte
 	if initit {
 		alloc := NewPage(mgr.pageDataSize)
 		//fmt.Println("NewBufMgrSamehadaImpl (1) alloc: ", *alloc)
 		alloc.Bits = mgr.pageBits
 		PutID(&alloc.Right, MinLvl+1)
 
-		if mgr.WritePage(alloc, 0, false) != BLTErrOk {
+		if mgr.WritePage(alloc, 0, true) != BLTErrOk {
 			errPrintf("Unable to create btree page zero\n")
 			mgr.Close()
 			return nil
@@ -126,7 +128,8 @@ func NewBufMgrSamehada(name string, bits uint8, nodeMax uint, bpm *buffer.Buffer
 		if err2 := binary.Write(buf, binary.LittleEndian, alloc.PageHeader); err2 != nil {
 			errPrintf("Unable to output page header as bytes: %v\n", err2)
 		}
-		mgr.pageZero.alloc = buf.Bytes()
+		//mgr.pageZero.alloc = buf.Bytes()
+		allocBytes = buf.Bytes()
 
 		alloc = NewPage(mgr.pageDataSize)
 		alloc.Bits = mgr.pageBits
@@ -170,7 +173,7 @@ func NewBufMgrSamehada(name string, bits uint8, nodeMax uint, bpm *buffer.Buffer
 	//	mgr.Close()
 	//	return nil
 	//}
-	//mgr.pageZero.alloc = pageZeroBytes
+	mgr.pageZero.alloc = allocBytes
 
 	// comment out because of panic
 	//if err := syscall.Mlock(mgr.pageZero); err != nil {
@@ -181,135 +184,137 @@ func NewBufMgrSamehada(name string, bits uint8, nodeMax uint, bpm *buffer.Buffer
 }
 
 func (mgr *BufMgrSamehadaImpl) ReadPage(page *Page, pageNo Uid) BLTErr {
-	off := pageNo << mgr.pageBits
-
-	pageBytes := make([]byte, mgr.pageSize)
-	if n, err := mgr.idx.ReadAt(pageBytes, int64(off)); err != nil || n < int(mgr.pageSize) {
-		errPrintf("Unable to read page. Because of err: %v or n: %d\n", err, n)
-		return BLTErrRead
-	}
-
-	if err := binary.Read(bytes.NewReader(pageBytes), binary.LittleEndian, &page.PageHeader); err != nil {
-		errPrintf("Unable to read page header as bytes: %v\n", err)
-		return BLTErrRead
-	}
-	page.Data = pageBytes[PageHeaderSize:]
-
 	/*
-		fmt.Println("ReadPage pageNo: ", pageNo)
+		off := pageNo << mgr.pageBits
 
-		mgr.shMetadataMutex.Lock()
-		if shPageId, ok := mgr.pageIdConvMap[pageNo]; ok {
-			mgr.shMetadataMutex.Unlock()
-			shPage := mgr.bpm.FetchPage(shPageId)
-			if shPage == nil {
-				panic("failed to fetch page")
-			}
-			headerBuf := bytes.NewBuffer(shPage.Data()[:PageHeaderSize])
-			binary.Read(headerBuf, binary.LittleEndian, &page.PageHeader)
-			page.Data = (*shPage.Data())[PageHeaderSize:]
-		} else {
-			panic("page mapping not found")
+		pageBytes := make([]byte, mgr.pageSize)
+		if n, err := mgr.idx.ReadAt(pageBytes, int64(off)); err != nil || n < int(mgr.pageSize) {
+			errPrintf("Unable to read page. Because of err: %v or n: %d\n", err, n)
+			return BLTErrRead
 		}
+
+		if err := binary.Read(bytes.NewReader(pageBytes), binary.LittleEndian, &page.PageHeader); err != nil {
+			errPrintf("Unable to read page header as bytes: %v\n", err)
+			return BLTErrRead
+		}
+		page.Data = pageBytes[PageHeaderSize:]
 	*/
+
+	fmt.Println("ReadPage pageNo: ", pageNo)
+
+	mgr.shMetadataMutex.Lock()
+	if shPageId, ok := mgr.pageIdConvMap[pageNo]; ok {
+		mgr.shMetadataMutex.Unlock()
+		shPage := mgr.bpm.FetchPage(shPageId)
+		if shPage == nil {
+			panic("failed to fetch page")
+		}
+		headerBuf := bytes.NewBuffer(shPage.Data()[:PageHeaderSize])
+		binary.Read(headerBuf, binary.LittleEndian, &page.PageHeader)
+		page.Data = (*shPage.Data())[PageHeaderSize:]
+	} else {
+		panic("page mapping not found")
+	}
+
 	return BLTErrOk
 }
 
 // writePage writes a page to permanent location in BLTree file,
 // and clear the dirty bit (← clear していない...)
 func (mgr *BufMgrSamehadaImpl) WritePage(page *Page, pageNo Uid, isDirty bool) BLTErr {
-	off := pageNo << mgr.pageBits
-
-	// write page to disk as []byte
-	buf := bytes.NewBuffer(make([]byte, 0, mgr.pageSize))
-	if err := binary.Write(buf, binary.LittleEndian, page.PageHeader); err != nil {
-		errPrintf("Unable to output page header as bytes: %v\n", err)
-		return BLTErrWrite
-	}
-	if _, err := buf.Write(page.Data); err != nil {
-		errPrintf("Unable to output page data: %v\n", err)
-		return BLTErrWrite
-	}
-	if buf.Len() < int(mgr.pageSize) {
-		buf.Write(make([]byte, int(mgr.pageSize)-buf.Len()))
-	}
-	if _, err := mgr.idx.WriteAt(buf.Bytes(), int64(off)); err != nil {
-		errPrintf("Unable to write btree file: %v\n", err)
-		return BLTErrWrite
-	}
-
 	/*
-		// release page to SamehadaDB's buffer pool
+		off := pageNo << mgr.pageBits
 
-		//if pageNo == 0 {
-		//	// ignore page zero
-		//	return BLTErrOk
-		//}
-
-		//fmt.Println("WritePage pageNo: ", pageNo)
-
-		isNoEntry := false
-		shPageId := types.PageID(-1)
-		ok1 := false
-		mgr.shMetadataMutex.Lock()
-		if shPageId, ok1 = mgr.pageIdConvMap[pageNo]; !ok1 {
-			isNoEntry = true
-			shPageId = types.PageID(-1)
+		// write page to disk as []byte
+		buf := bytes.NewBuffer(make([]byte, 0, mgr.pageSize))
+		if err := binary.Write(buf, binary.LittleEndian, page.PageHeader); err != nil {
+			errPrintf("Unable to output page header as bytes: %v\n", err)
+			return BLTErrWrite
 		}
-		var shPage *shpage.Page
-		if _, ok := mgr.shPagesMap[shPageId]; ok {
-			if isNoEntry {
-				panic("illegal state")
-			}
-			shPage = mgr.shPagesMap[shPageId]
-			delete(mgr.shPagesMap, shPageId)
-			mgr.shMetadataMutex.Unlock()
-		} else {
-			mgr.shMetadataMutex.Unlock()
-			if !isNoEntry {
-				// already page relesed to SamehadaDB's buffer pool
-				//panic("page not found")
-				fmt.Println("WritePage: page not found... : ", pageNo)
-				return BLTErrOk
-			}
-			isNoEntry = true
+		if _, err := buf.Write(page.Data); err != nil {
+			errPrintf("Unable to output page data: %v\n", err)
+			return BLTErrWrite
 		}
+		if buf.Len() < int(mgr.pageSize) {
+			buf.Write(make([]byte, int(mgr.pageSize)-buf.Len()))
+		}
+		if _, err := mgr.idx.WriteAt(buf.Bytes(), int64(off)); err != nil {
+			errPrintf("Unable to write btree file: %v\n", err)
+			return BLTErrWrite
+		}
+	*/
 
+	// release page to SamehadaDB's buffer pool
+
+	//if pageNo == 0 {
+	//	// ignore page zero
+	//	return BLTErrOk
+	//}
+
+	//fmt.Println("WritePage pageNo: ", pageNo)
+
+	isNoEntry := false
+	shPageId := types.PageID(-1)
+	ok1 := false
+	mgr.shMetadataMutex.Lock()
+	if shPageId, ok1 = mgr.pageIdConvMap[pageNo]; !ok1 {
+		isNoEntry = true
+		shPageId = types.PageID(-1)
+	}
+	var shPage *shpage.Page
+	if _, ok := mgr.shPagesMap[shPageId]; ok {
 		if isNoEntry {
-			// called for not existing page case
-			fmt.Println("WritePage: new page... : ", pageNo)
-
-			// create new page on SamehadaDB's buffer pool and db file
-			// 1 pin count is left
-			shPage = mgr.bpm.NewPage()
-			if shPage == nil {
-				panic("failed to create new page")
-			}
-			copy(shPage.Data()[PageHeaderSize:], page.Data)
-			headerBuf := bytes.NewBuffer(make([]byte, 0, PageHeaderSize))
-			binary.Write(headerBuf, binary.LittleEndian, page.PageHeader)
-			headerBytes := headerBuf.Bytes()
-			copy(shPage.Data()[:PageHeaderSize], headerBytes)
-			mgr.shMetadataMutex.Lock()
-			if _, ok := mgr.pageIdConvMap[pageNo]; ok {
-				panic("page already exists")
-			}
-			mgr.pageIdConvMap[pageNo] = shPage.GetPageId()
-			shPageId = shPage.GetPageId()
-			if _, ok := mgr.shPagesMap[shPage.GetPageId()]; ok {
-				panic("page already exists")
-			}
-			mgr.shPagesMap[shPageId] = shPage
-			mgr.shMetadataMutex.Unlock()
+			panic("illegal state")
 		}
+		shPage = mgr.shPagesMap[shPageId]
+		delete(mgr.shPagesMap, shPageId)
+		mgr.shMetadataMutex.Unlock()
+	} else {
+		mgr.shMetadataMutex.Unlock()
+		if !isNoEntry {
+			// already page relesed to SamehadaDB's buffer pool
+			//panic("page not found")
+			fmt.Println("WritePage: page not found... : ", pageNo)
+			return BLTErrOk
+		}
+		isNoEntry = true
+	}
 
+	if isNoEntry {
+		// called for not existing page case
+		fmt.Println("WritePage: new page... : ", pageNo)
+
+		// create new page on SamehadaDB's buffer pool and db file
+		// 1 pin count is left
+		shPage = mgr.bpm.NewPage()
+		if shPage == nil {
+			panic("failed to create new page")
+		}
+		copy(shPage.Data()[PageHeaderSize:], page.Data)
 		headerBuf := bytes.NewBuffer(make([]byte, 0, PageHeaderSize))
 		binary.Write(headerBuf, binary.LittleEndian, page.PageHeader)
 		headerBytes := headerBuf.Bytes()
 		copy(shPage.Data()[:PageHeaderSize], headerBytes)
-		mgr.bpm.UnpinPage(shPageId, isDirty)
-		fmt.Println("WritePage: unpin paged. pageNo:", pageNo, "shPageId:", shPageId, "pin count: ", shPage.PinCount())
-	*/
+		mgr.shMetadataMutex.Lock()
+		if _, ok := mgr.pageIdConvMap[pageNo]; ok {
+			panic("page already exists")
+		}
+		mgr.pageIdConvMap[pageNo] = shPage.GetPageId()
+		shPageId = shPage.GetPageId()
+		if _, ok := mgr.shPagesMap[shPage.GetPageId()]; ok {
+			panic("page already exists")
+		}
+		mgr.shPagesMap[shPageId] = shPage
+		mgr.shMetadataMutex.Unlock()
+	}
+
+	headerBuf := bytes.NewBuffer(make([]byte, 0, PageHeaderSize))
+	binary.Write(headerBuf, binary.LittleEndian, page.PageHeader)
+	headerBytes := headerBuf.Bytes()
+	copy(shPage.Data()[:PageHeaderSize], headerBytes)
+	mgr.bpm.UnpinPage(shPageId, isDirty)
+	fmt.Println("WritePage: unpin paged. pageNo:", pageNo, "shPageId:", shPageId, "pin count: ", shPage.PinCount())
+
 	return BLTErrOk
 }
 
@@ -523,11 +528,12 @@ func (mgr *BufMgrSamehadaImpl) PinLatch(pageNo Uid, loadIt bool, reads *uint, wr
 		page := mgr.pagePool[slot]
 
 		//if latch.dirty {
-		if err := mgr.WritePage(&page, latch.pageNo, latch.dirty); err != BLTErrOk {
+		//if err := mgr.WritePage(&page, latch.pageNo, latch.dirty); err != BLTErrOk {
+		if err := mgr.WritePage(&page, latch.pageNo, true); err != BLTErrOk {
 			return nil
 		} else {
 			//for relase SamehadaDB page's memory
-			//page.Data = nil
+			page.Data = nil
 
 			latch.dirty = false
 			*writes++
