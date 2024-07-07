@@ -265,15 +265,17 @@ func (mgr *BufMgrSamehadaImpl) WritePage(page *Page, pageNo Uid, isDirty bool) B
 		if shPage == nil {
 			panic("failed to create new page")
 		}
-		copy(shPage.Data()[PageHeaderSize:], page.Data)
-		headerBuf := bytes.NewBuffer(make([]byte, 0, PageHeaderSize))
-		binary.Write(headerBuf, binary.LittleEndian, page.PageHeader)
-		headerBytes := headerBuf.Bytes()
-		copy(shPage.Data()[:PageHeaderSize], headerBytes)
-		if _, ok := mgr.pageIdConvMap.Load(pageNo); ok {
-			panic("page already exists")
+		if isDirty {
+			copy(shPage.Data()[PageHeaderSize:], page.Data)
+			headerBuf := bytes.NewBuffer(make([]byte, 0, PageHeaderSize))
+			binary.Write(headerBuf, binary.LittleEndian, page.PageHeader)
+			headerBytes := headerBuf.Bytes()
+			copy(shPage.Data()[:PageHeaderSize], headerBytes)
+			if _, ok := mgr.pageIdConvMap.Load(pageNo); ok {
+				panic("page already exists")
+			}
+			shPageId = shPage.GetPageId()
 		}
-		shPageId = shPage.GetPageId()
 		mgr.pageIdConvMap.Store(pageNo, shPageId)
 	}
 
@@ -288,12 +290,18 @@ func (mgr *BufMgrSamehadaImpl) WritePage(page *Page, pageNo Uid, isDirty bool) B
 		}
 	}
 
-	headerBuf := bytes.NewBuffer(make([]byte, 0, PageHeaderSize))
-	binary.Write(headerBuf, binary.LittleEndian, page.PageHeader)
-	headerBytes := headerBuf.Bytes()
-	copy(shPage.Data()[:PageHeaderSize], headerBytes)
-	copy(shPage.Data()[PageHeaderSize:], page.Data)
+	if isDirty {
+		headerBuf := bytes.NewBuffer(make([]byte, 0, PageHeaderSize))
+		binary.Write(headerBuf, binary.LittleEndian, page.PageHeader)
+		headerBytes := headerBuf.Bytes()
+		copy(shPage.Data()[:PageHeaderSize], headerBytes)
+		copy(shPage.Data()[PageHeaderSize:], page.Data)
+		//fmt.Println("WritePage: write page. dirty!")
+	} else {
+		//fmt.Println("WritePage: write page. not dirty!")
+	}
 	mgr.bpm.UnpinPage(shPageId, isDirty)
+
 	//fmt.Println("WritePage: unpin paged. pageNo:", pageNo, "shPageId:", shPageId, "pin count: ", shPage.PinCount())
 
 	return BLTErrOk
@@ -527,7 +535,7 @@ func (mgr *BufMgrSamehadaImpl) PinLatch(pageNo Uid, loadIt bool, reads *uint, wr
 
 		//if latch.dirty {
 		//if err := mgr.WritePage(&page, latch.pageNo, latch.dirty); err != BLTErrOk {
-		if err := mgr.WritePage(&page, latch.pageNo, true); err != BLTErrOk {
+		if err := mgr.WritePage(&page, latch.pageNo, latch.dirty); err != BLTErrOk {
 			return nil
 		} else {
 			//for relase SamehadaDB page's memory

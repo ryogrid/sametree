@@ -662,6 +662,100 @@ func TestBLTree_deleteManyConcurrently_samehada(t *testing.T) {
 	t.Logf("find %d keys. duration = %v", keyTotal, time.Since(start))
 }
 
+func TestBLTree_deleteManyConcurrentlyShuffle_samehada(t *testing.T) {
+	_ = os.Remove("data/bltree_delete_many_shuffle_concurrently.db")
+	_ = os.Remove("TestBLTree_deleteManyConcurrently_shuffle_samehada.db")
+
+	poolSize := uint32(300)
+
+	dm := disk.NewVirtualDiskManagerImpl("TestBLTree_deleteManyConcurrently_shuffle_samehada.db")
+	bpm := buffer.NewBufferPoolManager(poolSize, dm)
+	mgr := NewBufMgrSamehada("data/bltree_delete_many_shuffle_concurrently.db", 12, HASH_TABLE_ENTRY_CHAIN_LEN*16, bpm, nil)
+
+	keyTotal := 1600000
+	routineNum := 16 //7
+
+	keys := make([][]byte, keyTotal)
+	for i := 0; i < keyTotal; i++ {
+		bs := make([]byte, 8)
+		binary.LittleEndian.PutUint64(bs, uint64(i))
+		keys[i] = bs
+	}
+
+	// shuffle keys
+	randGen := rand.New(rand.NewSource(time.Now().UnixNano()))
+	randGen.Shuffle(len(keys), func(i, j int) { keys[i], keys[j] = keys[j], keys[i] })
+
+	wg := sync.WaitGroup{}
+	wg.Add(routineNum)
+
+	start := time.Now()
+	for r := 0; r < routineNum; r++ {
+		go func(n int) {
+			bltree := NewBLTree(mgr)
+			for i := 0; i < keyTotal; i++ {
+				if i%routineNum != n {
+					continue
+				}
+				if err := bltree.insertKey(keys[i], 0, [BtId]byte{}, true); err != BLTErrOk {
+					t.Errorf("in goroutine%d insertKey() = %v, want %v", n, err, BLTErrOk)
+				}
+
+				if i%2 == (n % 2) {
+					if err := bltree.deleteKey(keys[i], 0); err != BLTErrOk {
+						t.Errorf("deleteKey() = %v, want %v", err, BLTErrOk)
+					}
+				}
+
+				if i%2 == (n % 2) {
+					if found, _, _ := bltree.findKey(keys[i], BtId); found != -1 {
+						t.Errorf("findKey() = %v, want %v, key %v", found, -1, keys[i])
+						panic("findKey() != -1")
+					}
+				} else {
+					if found, _, _ := bltree.findKey(keys[i], BtId); found != 6 {
+						t.Errorf("findKey() = %v, want %v, key %v", found, 6, keys[i])
+						panic("findKey() != 6")
+					}
+				}
+			}
+
+			wg.Done()
+		}(r)
+	}
+	wg.Wait()
+	t.Logf("insert %d keys and delete skip one concurrently. duration =  %v", keyTotal, time.Since(start))
+
+	wg = sync.WaitGroup{}
+	wg.Add(routineNum)
+
+	start = time.Now()
+	for r := 0; r < routineNum; r++ {
+		go func(n int) {
+			bltree := NewBLTree(mgr)
+			for i := 0; i < keyTotal; i++ {
+				if i%routineNum != n {
+					continue
+				}
+				if i%2 == (n % 2) {
+					if found, _, _ := bltree.findKey(keys[i], BtId); found != -1 {
+						t.Errorf("findKey() = %v, want %v, key %v", found, -1, keys[i])
+					}
+				} else {
+					if found, _, _ := bltree.findKey(keys[i], BtId); found != 6 {
+						t.Errorf("findKey() = %v, want %v, key %v", found, 6, keys[i])
+					}
+				}
+			}
+
+			wg.Done()
+		}(r)
+	}
+	wg.Wait()
+
+	t.Logf("find %d keys. duration = %v", keyTotal, time.Since(start))
+}
+
 func TestBLTree_restart(t *testing.T) {
 	_ = os.Remove(`data/bltree_restart.db`)
 	mgr := NewBufMgr("data/bltree_restart.db", 13, 48)
