@@ -3,7 +3,6 @@ package blink_tree
 import (
 	"bytes"
 	"encoding/binary"
-	"fmt"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -194,7 +193,7 @@ func (mgr *BufMgrSamehadaImpl) ReadPage(page *Page, pageNo Uid) BLTErr {
 		page.Data = pageBytes[PageHeaderSize:]
 	*/
 
-	fmt.Println("ReadPage pageNo: ", pageNo)
+	//fmt.Println("ReadPage pageNo: ", pageNo)
 
 	if shPageId, ok := mgr.pageIdConvMap.Load(pageNo); ok {
 		shPage := mgr.bpm.FetchPage(shPageId.(types.PageID))
@@ -258,7 +257,7 @@ func (mgr *BufMgrSamehadaImpl) WritePage(page *Page, pageNo Uid, isDirty bool) B
 
 	if isNoEntry {
 		// called for not existing page case
-		fmt.Println("WritePage: new page... : ", pageNo)
+		//fmt.Println("WritePage: new page... : ", pageNo)
 
 		// create new page on SamehadaDB's buffer pool and db file
 		// 1 pin count is left
@@ -295,7 +294,7 @@ func (mgr *BufMgrSamehadaImpl) WritePage(page *Page, pageNo Uid, isDirty bool) B
 	copy(shPage.Data()[:PageHeaderSize], headerBytes)
 	copy(shPage.Data()[PageHeaderSize:], page.Data)
 	mgr.bpm.UnpinPage(shPageId, isDirty)
-	fmt.Println("WritePage: unpin paged. pageNo:", pageNo, "shPageId:", shPageId, "pin count: ", shPage.PinCount())
+	//fmt.Println("WritePage: unpin paged. pageNo:", pageNo, "shPageId:", shPageId, "pin count: ", shPage.PinCount())
 
 	return BLTErrOk
 }
@@ -607,7 +606,7 @@ func (mgr *BufMgrSamehadaImpl) NewPage(set *PageSet, contents *Page, reads *uint
 	// don't load cache from btree page
 	set.latch = mgr.PinLatch(pageNo, false, reads, writes)
 	if set.latch != nil {
-		fmt.Println("NewPage: at mgr.MapPage. pageNo: ", pageNo, " latch.pageNo: ", set.latch.pageNo, " latch.entry: ", set.latch.entry)
+		//fmt.Println("NewPage: at mgr.MapPage. pageNo: ", pageNo, " latch.pageNo: ", set.latch.pageNo, " latch.entry: ", set.latch.entry)
 		set.page = mgr.MapPage(set.latch)
 	} else {
 		mgr.err = BLTErrStruct
