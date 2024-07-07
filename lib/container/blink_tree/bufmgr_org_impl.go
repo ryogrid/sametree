@@ -265,30 +265,32 @@ func (mgr *BufMgrOrgImpl) Close() {
 
 // poolAudit
 func (mgr *BufMgrOrgImpl) PoolAudit() {
-	var slot uint32
-	for slot = 0; slot <= mgr.latchDeployed; slot++ {
-		latch := mgr.latchSets[slot]
+	/*
+		var slot uint32
+		for slot = 0; slot <= mgr.latchDeployed; slot++ {
+			latch := mgr.latchSets[slot]
 
-		if (latch.readWr.rin & Mask) > 0 {
-			errPrintf("latchset %d rwlocked for page %d\n", slot, latch.pageNo)
-		}
-		latch.readWr = BLTRWLock{}
+			if (latch.readWr.rin & Mask) > 0 {
+				errPrintf("latchset %d rwlocked for page %d\n", slot, latch.pageNo)
+			}
+			latch.readWr = BLTRWLock{}
 
-		if (latch.access.rin & Mask) > 0 {
-			errPrintf("latchset %d access locked for page %d\n", slot, latch.pageNo)
-		}
-		latch.access = BLTRWLock{}
+			if (latch.access.rin & Mask) > 0 {
+				errPrintf("latchset %d access locked for page %d\n", slot, latch.pageNo)
+			}
+			latch.access = BLTRWLock{}
 
-		if (latch.parent.rin & Mask) > 0 {
-			errPrintf("latchset %d parentlocked for page %d\n", slot, latch.pageNo)
-		}
-		latch.parent = BLTRWLock{}
+			if (latch.parent.rin & Mask) > 0 {
+				errPrintf("latchset %d parentlocked for page %d\n", slot, latch.pageNo)
+			}
+			latch.parent = BLTRWLock{}
 
-		if (latch.pin & ^ClockBit) > 0 {
-			errPrintf("latchset %d pinned for page %d\n", slot, latch.pageNo)
-			latch.pin = 0
+			if (latch.pin & ^ClockBit) > 0 {
+				errPrintf("latchset %d pinned for page %d\n", slot, latch.pageNo)
+				latch.pin = 0
+			}
 		}
-	}
+	*/
 }
 
 // latchLink
@@ -334,8 +336,8 @@ func (mgr *BufMgrOrgImpl) PinLatch(pageNo Uid, loadIt bool, reads *uint, writes 
 	hashIdx := uint(pageNo) % mgr.latchHash
 
 	// try to find our entry
-	mgr.hashTable[hashIdx].latch.SpinWriteLock()
-	defer mgr.hashTable[hashIdx].latch.SpinReleaseWrite()
+	mgr.hashTable[hashIdx].latch.Lock()
+	defer mgr.hashTable[hashIdx].latch.Unlock()
 
 	slot := mgr.hashTable[hashIdx].slot
 	for slot > 0 {
@@ -385,7 +387,7 @@ func (mgr *BufMgrOrgImpl) PinLatch(pageNo Uid, loadIt bool, reads *uint, writes 
 		if idx == hashIdx {
 			continue
 		}
-		if !mgr.hashTable[idx].latch.SpinWriteTry() {
+		if !mgr.hashTable[idx].latch.TryLock() {
 			continue
 		}
 
@@ -394,7 +396,7 @@ func (mgr *BufMgrOrgImpl) PinLatch(pageNo Uid, loadIt bool, reads *uint, writes 
 			if latch.pin&ClockBit > 0 {
 				FetchAndAndUint32(&latch.pin, ^ClockBit)
 			}
-			mgr.hashTable[idx].latch.SpinReleaseWrite()
+			mgr.hashTable[idx].latch.Unlock()
 			continue
 		}
 
@@ -422,10 +424,10 @@ func (mgr *BufMgrOrgImpl) PinLatch(pageNo Uid, loadIt bool, reads *uint, writes 
 		}
 
 		if mgr.LatchLink(hashIdx, slot, pageNo, loadIt, reads) != BLTErrOk {
-			mgr.hashTable[idx].latch.SpinReleaseWrite()
+			mgr.hashTable[idx].latch.Unlock()
 			return nil
 		}
-		mgr.hashTable[idx].latch.SpinReleaseWrite()
+		mgr.hashTable[idx].latch.Unlock()
 
 		return latch
 	}
@@ -639,15 +641,15 @@ func (mgr *BufMgrOrgImpl) FreePage(set *PageSet) {
 func (mgr *BufMgrOrgImpl) LockPage(mode BLTLockMode, latch *LatchSet) {
 	switch mode {
 	case LockRead:
-		latch.readWr.ReadLock()
+		latch.readWr.RLock()
 	case LockWrite:
-		latch.readWr.WriteLock()
+		latch.readWr.Lock()
 	case LockAccess:
-		latch.access.ReadLock()
+		latch.access.RLock()
 	case LockDelete:
-		latch.access.WriteLock()
+		latch.access.Lock()
 	case LockParent:
-		latch.parent.WriteLock()
+		latch.parent.Lock()
 		//case LockAtomic: // Note: not supported in this golang implementation
 	}
 }
@@ -655,15 +657,15 @@ func (mgr *BufMgrOrgImpl) LockPage(mode BLTLockMode, latch *LatchSet) {
 func (mgr *BufMgrOrgImpl) UnlockPage(mode BLTLockMode, latch *LatchSet) {
 	switch mode {
 	case LockRead:
-		latch.readWr.ReadRelease()
+		latch.readWr.RUnlock()
 	case LockWrite:
-		latch.readWr.WriteRelease()
+		latch.readWr.Unlock()
 	case LockAccess:
-		latch.access.ReadRelease()
+		latch.access.RUnlock()
 	case LockDelete:
-		latch.access.WriteRelease()
+		latch.access.Unlock()
 	case LockParent:
-		latch.parent.WriteRelease()
+		latch.parent.Unlock()
 		//case LockAtomic: // Note: not supported in this golang implementation
 	}
 }

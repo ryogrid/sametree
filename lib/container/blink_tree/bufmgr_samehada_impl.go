@@ -22,15 +22,15 @@ type (
 		idx          *os.File
 
 		pageZero      PageZero
-		lock          SpinLatch   // allocation area lite latch
-		latchDeployed uint32      // highest number of latch entries deployed
-		nLatchPage    uint        // number of latch pages at BT_latch
-		latchTotal    uint        // number of page latch entries
-		latchHash     uint        // number of latch hash table slots (latch hash table slots の数)
-		latchVictim   uint32      // next latch entry to examine
-		hashTable     []HashEntry // the buffer pool hash table entries
-		latchSets     []LatchSet  // mapped latch set from buffer pool
-		pagePool      []Page      // mapped to the buffer pool pages
+		lock          sync.RWMutex // allocation area lite latch
+		latchDeployed uint32       // highest number of latch entries deployed
+		nLatchPage    uint         // number of latch pages at BT_latch
+		latchTotal    uint         // number of page latch entries
+		latchHash     uint         // number of latch hash table slots (latch hash table slots の数)
+		latchVictim   uint32       // next latch entry to examine
+		hashTable     []HashEntry  // the buffer pool hash table entries
+		latchSets     []LatchSet   // mapped latch set from buffer pool
+		pagePool      []Page       // mapped to the buffer pool pages
 		bpm           *buffer.BufferPoolManager
 		pageIdConvMap *sync.Map // page id conversion map: Uid -> types.PageID
 
@@ -389,30 +389,32 @@ func (mgr *BufMgrSamehadaImpl) deserializePageIdMappingFromPage(pageZero *Page) 
 
 // poolAudit
 func (mgr *BufMgrSamehadaImpl) PoolAudit() {
-	var slot uint32
-	for slot = 0; slot <= mgr.latchDeployed; slot++ {
-		latch := mgr.latchSets[slot]
+	/*
+		var slot uint32
+		for slot = 0; slot <= mgr.latchDeployed; slot++ {
+			latch := mgr.latchSets[slot]
 
-		if (latch.readWr.rin & Mask) > 0 {
-			errPrintf("latchset %d rwlocked for page %d\n", slot, latch.pageNo)
-		}
-		latch.readWr = BLTRWLock{}
+			if (latch.readWr.rin & Mask) > 0 {
+				errPrintf("latchset %d rwlocked for page %d\n", slot, latch.pageNo)
+			}
+			latch.readWr = BLTRWLock{}
 
-		if (latch.access.rin & Mask) > 0 {
-			errPrintf("latchset %d access locked for page %d\n", slot, latch.pageNo)
-		}
-		latch.access = BLTRWLock{}
+			if (latch.access.rin & Mask) > 0 {
+				errPrintf("latchset %d access locked for page %d\n", slot, latch.pageNo)
+			}
+			latch.access = BLTRWLock{}
 
-		if (latch.parent.rin & Mask) > 0 {
-			errPrintf("latchset %d parentlocked for page %d\n", slot, latch.pageNo)
-		}
-		latch.parent = BLTRWLock{}
+			if (latch.parent.rin & Mask) > 0 {
+				errPrintf("latchset %d parentlocked for page %d\n", slot, latch.pageNo)
+			}
+			latch.parent = BLTRWLock{}
 
-		if (latch.pin & ^ClockBit) > 0 {
-			errPrintf("latchset %d pinned for page %d\n", slot, latch.pageNo)
-			latch.pin = 0
+			if (latch.pin & ^ClockBit) > 0 {
+				errPrintf("latchset %d pinned for page %d\n", slot, latch.pageNo)
+				latch.pin = 0
+			}
 		}
-	}
+	*/
 }
 
 // latchLink
@@ -458,8 +460,8 @@ func (mgr *BufMgrSamehadaImpl) PinLatch(pageNo Uid, loadIt bool, reads *uint, wr
 	hashIdx := uint(pageNo) % mgr.latchHash
 
 	// try to find our entry
-	mgr.hashTable[hashIdx].latch.SpinWriteLock()
-	defer mgr.hashTable[hashIdx].latch.SpinReleaseWrite()
+	mgr.hashTable[hashIdx].latch.Lock()
+	defer mgr.hashTable[hashIdx].latch.Unlock()
 
 	slot := mgr.hashTable[hashIdx].slot
 	for slot > 0 {
@@ -509,7 +511,7 @@ func (mgr *BufMgrSamehadaImpl) PinLatch(pageNo Uid, loadIt bool, reads *uint, wr
 		if idx == hashIdx {
 			continue
 		}
-		if !mgr.hashTable[idx].latch.SpinWriteTry() {
+		if !mgr.hashTable[idx].latch.TryLock() {
 			continue
 		}
 
@@ -518,7 +520,7 @@ func (mgr *BufMgrSamehadaImpl) PinLatch(pageNo Uid, loadIt bool, reads *uint, wr
 			if latch.pin&ClockBit > 0 {
 				FetchAndAndUint32(&latch.pin, ^ClockBit)
 			}
-			mgr.hashTable[idx].latch.SpinReleaseWrite()
+			mgr.hashTable[idx].latch.Unlock()
 			continue
 		}
 
@@ -550,10 +552,10 @@ func (mgr *BufMgrSamehadaImpl) PinLatch(pageNo Uid, loadIt bool, reads *uint, wr
 		}
 
 		if mgr.LatchLink(hashIdx, slot, pageNo, loadIt, reads) != BLTErrOk {
-			mgr.hashTable[idx].latch.SpinReleaseWrite()
+			mgr.hashTable[idx].latch.Unlock()
 			return nil
 		}
-		mgr.hashTable[idx].latch.SpinReleaseWrite()
+		mgr.hashTable[idx].latch.Unlock()
 
 		return latch
 	}
@@ -572,7 +574,7 @@ func (mgr *BufMgrSamehadaImpl) UnpinLatch(latch *LatchSet) {
 // Uid argument is used only for BufMgr initialization
 func (mgr *BufMgrSamehadaImpl) NewPage(set *PageSet, contents *Page, reads *uint, writes *uint) BLTErr {
 	// lock allocation page
-	mgr.lock.SpinWriteLock()
+	mgr.lock.Lock()
 
 	//fmt.Println("NewPage(1):  pageNo: ", GetID(&mgr.pageZero.chain))
 
@@ -589,7 +591,7 @@ func (mgr *BufMgrSamehadaImpl) NewPage(set *PageSet, contents *Page, reads *uint
 		}
 
 		PutID(&mgr.pageZero.chain, GetID(&set.page.Right))
-		mgr.lock.SpinReleaseWrite()
+		mgr.lock.Unlock()
 		MemCpyPage(set.page, contents)
 
 		set.latch.dirty = true
@@ -601,7 +603,7 @@ func (mgr *BufMgrSamehadaImpl) NewPage(set *PageSet, contents *Page, reads *uint
 	mgr.pageZero.SetAllocRight(pageNo + 1)
 
 	// unlock allocation latch
-	mgr.lock.SpinReleaseWrite()
+	mgr.lock.Unlock()
 
 	// don't load cache from btree page
 	set.latch = mgr.PinLatch(pageNo, false, reads, writes)
@@ -750,7 +752,7 @@ func (mgr *BufMgrSamehadaImpl) LoadPage(set *PageSet, key []byte, lvl uint8, loc
 func (mgr *BufMgrSamehadaImpl) FreePage(set *PageSet) {
 
 	// lock allocation page
-	mgr.lock.SpinWriteLock()
+	mgr.lock.Lock()
 
 	// store chain
 	set.page.Right = mgr.pageZero.chain
@@ -764,7 +766,7 @@ func (mgr *BufMgrSamehadaImpl) FreePage(set *PageSet) {
 	mgr.UnpinLatch(set.latch)
 
 	// unlock allocation page
-	mgr.lock.SpinReleaseWrite()
+	mgr.lock.Unlock()
 }
 
 // LockPage
@@ -773,15 +775,15 @@ func (mgr *BufMgrSamehadaImpl) FreePage(set *PageSet) {
 func (mgr *BufMgrSamehadaImpl) LockPage(mode BLTLockMode, latch *LatchSet) {
 	switch mode {
 	case LockRead:
-		latch.readWr.ReadLock()
+		latch.readWr.RLock()
 	case LockWrite:
-		latch.readWr.WriteLock()
+		latch.readWr.Lock()
 	case LockAccess:
-		latch.access.ReadLock()
+		latch.access.RLock()
 	case LockDelete:
-		latch.access.WriteLock()
+		latch.access.Lock()
 	case LockParent:
-		latch.parent.WriteLock()
+		latch.parent.Lock()
 		//case LockAtomic: // Note: not supported in this golang implementation
 	}
 }
@@ -789,15 +791,15 @@ func (mgr *BufMgrSamehadaImpl) LockPage(mode BLTLockMode, latch *LatchSet) {
 func (mgr *BufMgrSamehadaImpl) UnlockPage(mode BLTLockMode, latch *LatchSet) {
 	switch mode {
 	case LockRead:
-		latch.readWr.ReadRelease()
+		latch.readWr.RUnlock()
 	case LockWrite:
-		latch.readWr.WriteRelease()
+		latch.readWr.Unlock()
 	case LockAccess:
-		latch.access.ReadRelease()
+		latch.access.RUnlock()
 	case LockDelete:
-		latch.access.WriteRelease()
+		latch.access.Unlock()
 	case LockParent:
-		latch.parent.WriteRelease()
+		latch.parent.Unlock()
 		//case LockAtomic: // Note: not supported in this golang implementation
 	}
 }

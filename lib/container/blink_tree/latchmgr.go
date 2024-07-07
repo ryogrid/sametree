@@ -65,22 +65,22 @@ type (
 	// HashEntry is hash table entries
 	HashEntry struct {
 		slot  uint // latch table entry at head of chain
-		latch SpinLatch
+		latch sync.Mutex
 	}
 
 	// LatchSet is latch manager table structure
 	LatchSet struct {
-		pageNo Uid       // latch set page number
-		readWr BLTRWLock // read / write page lock
-		access BLTRWLock // access intent / page delete
-		parent BLTRWLock // posting of fence key in parent
-		atomic BLTRWLock // atomic update in progress
-		split  uint      // right split page atomic insert
-		entry  uint      // entry slot in latch table
-		next   uint      // next entry in hash table chain
-		prev   uint      // prev entry in hash table chain
-		pin    uint32    // number of outstanding threads
-		dirty  bool      // page in cache is dirty
+		pageNo Uid          // latch set page number
+		readWr sync.RWMutex // read / write page lock
+		access sync.RWMutex // access intent / page delete
+		parent sync.RWMutex // posting of fence key in parent
+		atomic sync.RWMutex // atomic update in progress
+		split  uint         // right split page atomic insert
+		entry  uint         // entry slot in latch table
+		next   uint         // next entry in hash table chain
+		prev   uint         // prev entry in hash table chain
+		pin    uint32       // number of outstanding threads
+		dirty  bool         // page in cache is dirty
 
 		atomicID uint // thread id holding atomic lock
 	}
