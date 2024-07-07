@@ -488,9 +488,9 @@ func TestBLTree_deleteAll_samehada(t *testing.T) {
 	}
 }
 
-func TestBLTree_deleteManyConcurrently(t *testing.T) {
+func TestBLTree_deleteManyConcurrently_org(t *testing.T) {
 	_ = os.Remove("data/bltree_delete_many_concurrently.db")
-	mgr := NewBufMgr("data/bltree_delete_many_concurrently.db", 13, HASH_TABLE_ENTRY_CHAIN_LEN*7)
+	mgr := NewBufMgr("data/bltree_delete_many_concurrently.db", 12, HASH_TABLE_ENTRY_CHAIN_LEN*7)
 
 	keyTotal := 1600000
 	routineNum := 7
