@@ -1048,6 +1048,106 @@ func (tree *BLTree) RangeScan(lowerKey []byte, upperKey []byte) (num int, retKey
 	return num, retKeyArr, retValArr
 }
 
+// TODO: WIP: RangeScan2
+// nil argument for lowerKey means no lower bound
+// nil argument for upperKey means no upper bound
+// ATTENTION: this method call is not atomic with otehr tree operations
+func (tree *BLTree) RangeScan2(lowerKey []byte, upperKey []byte) (num int, retKeyArr [][]byte, retValArr [][]byte) {
+	retKeyArr = make([][]byte, 0)
+	retValArr = make([][]byte, 0)
+	itrCnt := 0
+
+	var curSet *PageSet
+	var nextSet *PageSet
+
+	slot := tree.mgr.LoadPage(curSet, lowerKey, 0, LockRead, &tree.reads, &tree.writes)
+
+	getKV := func() bool {
+		slotType := curSet.page.Typ(slot)
+		if slotType != Unique {
+			return true
+		}
+		key := curSet.page.Key(slot)
+		val := curSet.page.Value(slot)
+
+		// if upperKey is nil, then this condition is always false
+		if bytes.Compare(key, upperKey) < 0 {
+			return false
+		}
+
+		retKeyArr = append(retKeyArr, key)
+		retValArr = append(retValArr, *val)
+		itrCnt++
+		return true
+	}
+
+	freePinLatchs := func() {
+		tree.mgr.UnlockPage(LockRead, curSet.latch)
+		tree.mgr.UnpinLatch(curSet.latch)
+		if nextSet != nil {
+			tree.mgr.UnlockPage(LockRead, nextSet.latch)
+			tree.mgr.UnpinLatch(nextSet.latch)
+		}
+	}
+
+	readEntriesOfCurSet := func() bool {
+		for slot < curSet.page.Cnt {
+			if curSet.page.Dead(slot) {
+				continue
+			} else {
+				if ok := getKV(); !ok {
+					return false
+				}
+			}
+			slot++
+		}
+		return true
+	}
+
+	isFirstFin := false
+	for {
+		right := GetID(&curSet.page.Right)
+
+		// the first page is tail
+		if right == 0 {
+			readEntriesOfCurSet()
+			break
+		}
+
+		// read entries after getting continuous two pages
+
+		if isFirstFin {
+			tree.mgr.UnlockPage(LockRead, curSet.latch)
+			tree.mgr.UnpinLatch(curSet.latch)
+			slot = 0
+		} else {
+			isFirstFin = true
+		}
+		curSet = nextSet
+		right = GetID(&curSet.page.Right)
+		if right != 0 {
+			nextSet.latch = tree.mgr.PinLatch(right, true, &tree.reads, &tree.writes)
+			if nextSet.latch != nil {
+				nextSet.page = tree.mgr.MapPage(nextSet.latch)
+			} else {
+				panic("PinLatch failed")
+			}
+			tree.mgr.LockPage(LockRead, nextSet.latch)
+		}
+
+		if ok := readEntriesOfCurSet(); !ok {
+			break
+		}
+
+		if right == 0 {
+			break
+		}
+	}
+
+	freePinLatchs()
+	return num, retKeyArr, retValArr
+}
+
 func (tree *BLTree) GetRangeItr(lowerKey []byte, upperKey []byte) *BLTreeItr {
 	elems, keys, vals := tree.RangeScan(lowerKey, upperKey)
 	return &BLTreeItr{
