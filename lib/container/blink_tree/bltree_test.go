@@ -580,10 +580,10 @@ func TestBLTree_deleteManyConcurrently_samehada(t *testing.T) {
 
 	dm := disk.NewVirtualDiskManagerImpl("TestBLTree_deleteManyConcurrently_samehada.db")
 	bpm := buffer.NewBufferPoolManager(poolSize, dm)
-	mgr := NewBufMgrSamehada("data/bltree_delete_many_concurrently.db", 12, HASH_TABLE_ENTRY_CHAIN_LEN*7, bpm, nil)
+	mgr := NewBufMgrSamehada("data/bltree_delete_many_concurrently.db", 12, HASH_TABLE_ENTRY_CHAIN_LEN*16, bpm, nil)
 
 	keyTotal := 1600000
-	routineNum := 7
+	routineNum := 16 //7
 
 	keys := make([][]byte, keyTotal)
 	for i := 0; i < keyTotal; i++ {
@@ -673,7 +673,7 @@ func TestBLTree_deleteManyConcurrentlyShuffle_samehada(t *testing.T) {
 	mgr := NewBufMgrSamehada("data/bltree_delete_many_shuffle_concurrently.db", 12, HASH_TABLE_ENTRY_CHAIN_LEN*16, bpm, nil)
 
 	keyTotal := 1600000
-	routineNum := 16 //7
+	routineNum := 16
 
 	keys := make([][]byte, keyTotal)
 	for i := 0; i < keyTotal; i++ {
@@ -883,7 +883,7 @@ func TestBLTree_insert_and_range_scan_samehada(t *testing.T) {
 	// range scan and check keys are sorted
 	itrCnt := 0
 	bltree.err = -1
-	for slot := bltree.startKey([]byte{0, 0, 0, 0, 0, 0, 0, 0}); bltree.err != BLTErrOk; slot = bltree.nextKey(slot) {
+	for slot := bltree.startKey(nil); bltree.err != BLTErrOk; slot = bltree.nextKey(slot) {
 		slotType := bltree.cursor.Typ(slot)
 		if slotType != Unique {
 			continue
@@ -904,4 +904,7 @@ func TestBLTree_insert_and_range_scan_samehada(t *testing.T) {
 		fmt.Println("readVal: ", readKey)
 		itrCnt++
 	}
+
+	//num, keyArr, valArr := bltree.RangeScan(nil, nil)
+	//fmt.Println(num, keyArr, valArr)
 }

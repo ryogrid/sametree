@@ -1,6 +1,7 @@
 package blink_tree
 
 import (
+	"bytes"
 	"log"
 	"sync/atomic"
 )
@@ -929,4 +930,32 @@ func (tree *BLTree) startKey(key []byte) uint32 {
 	tree.mgr.UnlockPage(LockRead, set.latch)
 	tree.mgr.UnpinLatch(set.latch)
 	return slot
+}
+
+// nil argument for lowerKey means no lower bound
+// nil argument for upperKey means no upper bound
+func (tree *BLTree) RangeScan(lowerKey []byte, upperKey []byte) (num int, retKeyArr [][]byte, retValArr [][]byte) {
+	// range scan and check keys are sorted
+	retKeyArr = make([][]byte, 0)
+	retValArr = make([][]byte, 0)
+	tree.err = -1
+	itrCnt := 0
+	for slot := tree.startKey(lowerKey); tree.err != BLTErrOk; slot = tree.nextKey(slot) {
+		slotType := tree.cursor.Typ(slot)
+		if slotType != Unique {
+			continue
+		}
+		key := tree.cursor.Key(slot)
+		val := tree.cursor.Value(slot)
+
+		// if upperKey is nil, then this condition is always false
+		if bytes.Compare(key, upperKey) < 0 {
+			break
+		}
+
+		retKeyArr = append(retKeyArr, key)
+		retValArr = append(retValArr, *val)
+		itrCnt++
+	}
+	return num, retKeyArr, retValArr
 }
