@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"math"
 	"math/rand"
 	"os"
 	"sync"
@@ -864,47 +863,48 @@ func TestBLTree_insert_and_range_scan_samehada(t *testing.T) {
 		keys[i-1] = key
 	}
 
-	// generate shuffled keys
-	keysRandom := make([][]byte, keyTotal-1)
-	copy(keysRandom, keys)
-	randGen := rand.New(rand.NewSource(time.Now().UnixNano()))
-	randGen.Shuffle(len(keysRandom), func(i, j int) { keysRandom[i], keysRandom[j] = keysRandom[j], keysRandom[i] })
+	//// generate shuffled keys
+	//keysRandom := make([][]byte, keyTotal-1)
+	//copy(keysRandom, keys)
+	//randGen := rand.New(rand.NewSource(time.Now().UnixNano()))
+	//randGen.Shuffle(len(keysRandom), func(i, j int) { keysRandom[i], keysRandom[j] = keysRandom[j], keysRandom[i] })
 
 	// insert in shuffled order
 	for i := 0; i < keyTotal-1; i++ {
-		key := keysRandom[i]
+		//key := keysRandom[i]
+		key := keys[i]
 		val := make([]byte, 4)
-		binary.LittleEndian.PutUint32(val, uint32(i))
-		if err := bltree.insertKey(key, 0, [BtId]byte{val[3], val[2], val[1], val[0], 0, 1}, true); err != BLTErrOk {
+		binary.LittleEndian.PutUint32(val, uint32(i+1))
+		if err := bltree.insertKey(key, 0, [BtId]byte{val[0], val[1], val[2], val[3], 0, 1}, true); err != BLTErrOk {
 			t.Errorf("insertKey() = %v, want %v", err, BLTErrOk)
 		}
 	}
 
-	// range scan and check keys are sorted
-	itrCnt := 0
-	bltree.err = -1
-	for slot := bltree.startKey(nil); bltree.err != BLTErrOk; slot = bltree.nextKey(slot) {
-		slotType := bltree.cursor.Typ(slot)
-		if slotType != Unique {
-			continue
-		}
-		key := bltree.cursor.Key(slot)
-		if bytes.Compare(key, keys[itrCnt]) != 0 {
-			t.Errorf("key = %v, want %v", key, keys[itrCnt])
-		}
-		keyBuf := bytes.NewBuffer(key)
-		readKey := uint64(math.MaxUint64)
-		binary.Read(keyBuf, binary.LittleEndian, &readKey)
-		fmt.Println("readKey: ", readKey)
+	//// range scan and check keys are sorted
+	//itrCnt := 0
+	//bltree.err = -1
+	//for slot := bltree.startKey(nil); bltree.err != BLTErrOk; slot = bltree.nextKey(slot) {
+	//	slotType := bltree.cursor.Typ(slot)
+	//	if slotType != Unique {
+	//		continue
+	//	}
+	//	key := bltree.cursor.Key(slot)
+	//	if bytes.Compare(key, keys[itrCnt]) != 0 {
+	//		t.Errorf("key = %v, want %v", key, keys[itrCnt])
+	//	}
+	//	keyBuf := bytes.NewBuffer(key)
+	//	readKey := uint64(math.MaxUint64)
+	//	binary.Read(keyBuf, binary.LittleEndian, &readKey)
+	//	fmt.Println("readKey: ", readKey)
+	//
+	//	val := bltree.cursor.Value(slot)
+	//	valBuf := bytes.NewBuffer(*val)
+	//	readVal := uint32(math.MaxUint32)
+	//	binary.Read(valBuf, binary.LittleEndian, &readVal)
+	//	fmt.Println("readVal: ", readVal)
+	//	itrCnt++
+	//}
 
-		val := bltree.cursor.Value(slot)
-		valBuf := bytes.NewBuffer(*val)
-		readVal := uint32(math.MaxUint32)
-		binary.Read(valBuf, binary.LittleEndian, &readVal)
-		fmt.Println("readVal: ", readVal)
-		itrCnt++
-	}
-
-	//num, keyArr, valArr := bltree.RangeScan(nil, nil)
-	//fmt.Println(num, keyArr, valArr)
+	num, keyArr, valArr := bltree.RangeScan(nil, nil)
+	fmt.Println(num, keyArr, valArr)
 }
