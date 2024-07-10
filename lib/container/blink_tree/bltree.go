@@ -957,8 +957,8 @@ func (tree *BLTree) RangeScan(lowerKey []byte, upperKey []byte) (num int, retKey
 	retValArr = make([][]byte, 0)
 	itrCnt := 0
 
-	var curSet *PageSet
-	var nextSet *PageSet
+	curSet := new(PageSet)
+	var nextSet *PageSet = nil
 
 	slot := tree.mgr.LoadPage(curSet, lowerKey, 0, LockRead, &tree.reads, &tree.writes)
 
@@ -993,6 +993,7 @@ func (tree *BLTree) RangeScan(lowerKey []byte, upperKey []byte) (num int, retKey
 	readEntriesOfCurSet := func() bool {
 		for slot < curSet.page.Cnt {
 			if curSet.page.Dead(slot) {
+				slot++
 				continue
 			} else {
 				if ok := getKV(); !ok {
@@ -1058,7 +1059,6 @@ func (tree *BLTree) RangeScan2(lowerKey []byte, upperKey []byte) (num int, retKe
 	itrCnt := 0
 
 	var curSet *PageSet
-	var nextSet *PageSet
 
 	slot := tree.mgr.LoadPage(curSet, lowerKey, 0, LockRead, &tree.reads, &tree.writes)
 
@@ -1082,11 +1082,9 @@ func (tree *BLTree) RangeScan2(lowerKey []byte, upperKey []byte) (num int, retKe
 	}
 
 	freePinLatchs := func() {
-		tree.mgr.UnlockPage(LockRead, curSet.latch)
-		tree.mgr.UnpinLatch(curSet.latch)
-		if nextSet != nil {
-			tree.mgr.UnlockPage(LockRead, nextSet.latch)
-			tree.mgr.UnpinLatch(nextSet.latch)
+		if curSet != nil {
+			tree.mgr.UnlockPage(LockRead, curSet.latch)
+			tree.mgr.UnpinLatch(curSet.latch)
 		}
 	}
 
@@ -1104,46 +1102,33 @@ func (tree *BLTree) RangeScan2(lowerKey []byte, upperKey []byte) (num int, retKe
 		return true
 	}
 
-	isFirstFin := false
 	for {
 		right := GetID(&curSet.page.Right)
 
-		// the first page is tail
+		// the first page is tail or reached tail
 		if right == 0 {
 			readEntriesOfCurSet()
 			break
 		}
 
-		// read entries after getting continuous two pages
-
-		if isFirstFin {
-			tree.mgr.UnlockPage(LockRead, curSet.latch)
-			tree.mgr.UnpinLatch(curSet.latch)
-			slot = 0
-		} else {
-			isFirstFin = true
-		}
-		curSet = nextSet
-		right = GetID(&curSet.page.Right)
-		if right != 0 {
-			nextSet.latch = tree.mgr.PinLatch(right, true, &tree.reads, &tree.writes)
-			if nextSet.latch != nil {
-				nextSet.page = tree.mgr.MapPage(nextSet.latch)
-			} else {
-				panic("PinLatch failed")
-			}
-			tree.mgr.LockPage(LockRead, nextSet.latch)
-		}
-
 		if ok := readEntriesOfCurSet(); !ok {
+			// reached upperKey
 			break
 		}
 
-		if right == 0 {
-			break
+		// before reading the next page, we need to free the current page
+		freePinLatchs()
+
+		curSet.latch = tree.mgr.PinLatch(right, true, &tree.reads, &tree.writes)
+		if curSet.latch != nil {
+			curSet.page = tree.mgr.MapPage(curSet.latch)
+		} else {
+			panic("PinLatch failed")
 		}
+		tree.mgr.LockPage(LockRead, curSet.latch)
 	}
 
+	// free the last page
 	freePinLatchs()
 	return num, retKeyArr, retValArr
 }

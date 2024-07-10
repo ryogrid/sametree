@@ -897,11 +897,11 @@ func TestBLTree_insert_and_range_scan_samehada(t *testing.T) {
 		binary.Read(keyBuf, binary.LittleEndian, &readKey)
 		fmt.Println("readKey: ", readKey)
 
-		val := bltree.cursor.Key(slot)
-		valBuf := bytes.NewBuffer(val)
+		val := bltree.cursor.Value(slot)
+		valBuf := bytes.NewBuffer(*val)
 		readVal := uint32(math.MaxUint32)
 		binary.Read(valBuf, binary.LittleEndian, &readVal)
-		fmt.Println("readVal: ", readKey)
+		fmt.Println("readVal: ", readVal)
 		itrCnt++
 	}
 
