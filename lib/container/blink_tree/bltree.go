@@ -1090,7 +1090,7 @@ func (tree *BLTree) RangeScan(lowerKey []byte, upperKey []byte) (num int, retKey
 		return true
 	}
 
-	isFirstFin := false
+	isFirstFin := true
 	for {
 		right := GetID(&curSet.page.Right)
 
@@ -1102,15 +1102,15 @@ func (tree *BLTree) RangeScan(lowerKey []byte, upperKey []byte) (num int, retKey
 
 		// read entries after getting continuous two pages
 
+		right = GetID(&curSet.page.Right)
 		if isFirstFin {
+			isFirstFin = false
+		} else {
 			tree.mgr.UnlockPage(LockRead, curSet.latch)
 			tree.mgr.UnpinLatch(curSet.latch)
 			slot = 0
-		} else {
-			isFirstFin = true
 		}
 		curSet = nextSet
-		right = GetID(&curSet.page.Right)
 		if right != 0 {
 			nextSet.latch = tree.mgr.PinLatch(right, true, &tree.reads, &tree.writes)
 			if nextSet.latch != nil {
@@ -1131,7 +1131,7 @@ func (tree *BLTree) RangeScan(lowerKey []byte, upperKey []byte) (num int, retKey
 	}
 
 	freePinLatchs()
-	return num, retKeyArr, retValArr
+	return itrCnt, retKeyArr, retValArr
 }
 */
 

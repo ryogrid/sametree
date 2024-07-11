@@ -701,7 +701,7 @@ func TestBLTree_deleteInsertRangeScanConcurrently_samehada(t *testing.T) {
 					var foundKey uint32
 					binary.Read(buf, binary.LittleEndian, &foundKey)
 					if foundKey < curNum {
-						panic("foundKey <= curNum")
+						panic("foundKey < curNum")
 					}
 					curNum = foundKey
 				}
