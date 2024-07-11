@@ -672,12 +672,12 @@ func TestBLTree_deleteInsertRangeScanConcurrently_samehada(t *testing.T) {
 	mgr := NewBufMgrSamehada("data/bltree_delete_insert_range_scan_many_concurrently.db", 12, HASH_TABLE_ENTRY_CHAIN_LEN*16, bpm, nil)
 
 	keyTotal := 1600000
-	routineNum := 16 //7
+	routineNum := 16
 
 	keys := make([][]byte, keyTotal)
 	for i := 0; i < keyTotal; i++ {
 		bs := make([]byte, 8)
-		binary.LittleEndian.PutUint64(bs, uint64(i))
+		binary.BigEndian.PutUint64(bs, uint64(i))
 		keys[i] = bs
 	}
 
@@ -690,21 +690,25 @@ func TestBLTree_deleteInsertRangeScanConcurrently_samehada(t *testing.T) {
 			bltree := NewBLTree(mgr)
 
 			rangeScanCheck := func(startKey []byte) {
-				elemNum, keyArr, _ := bltree.RangeScan(startKey, nil)
+				//elemNum, keyArr, _ := bltree.RangeScan(startKey, nil)
+				elemNum, keyArr, _ := bltree.RangeScan(nil, nil)
 				if elemNum != len(keyArr) {
 					panic("elemNum != len(keyArr)")
 				}
 				// check result keys are ordered
-				curNum := uint32(0)
+				curNum := uint64(0)
+				keyInts := make([]uint64, 0)
 				for idx := 0; idx < elemNum; idx++ {
 					buf := bytes.NewBuffer(keyArr[idx])
-					var foundKey uint32
-					binary.Read(buf, binary.LittleEndian, &foundKey)
+					var foundKey uint64
+					binary.Read(buf, binary.BigEndian, &foundKey)
+					keyInts = append(keyInts, foundKey)
 					if foundKey < curNum {
 						panic("foundKey < curNum")
 					}
 					curNum = foundKey
 				}
+				fmt.Println(keyInts)
 			}
 
 			for i := 0; i < keyTotal; i++ {
@@ -977,12 +981,6 @@ func TestBLTree_insert_and_range_scan_samehada(t *testing.T) {
 		keys[i-1] = key
 	}
 
-	//// generate shuffled keys
-	//keysRandom := make([][]byte, keyTotal-1)
-	//copy(keysRandom, keys)
-	//randGen := rand.New(rand.NewSource(time.Now().UnixNano()))
-	//randGen.Shuffle(len(keysRandom), func(i, j int) { keysRandom[i], keysRandom[j] = keysRandom[j], keysRandom[i] })
-
 	// insert in shuffled order
 	for i := 0; i < keyTotal-1; i++ {
 		//key := keysRandom[i]
@@ -993,31 +991,6 @@ func TestBLTree_insert_and_range_scan_samehada(t *testing.T) {
 			t.Errorf("insertKey() = %v, want %v", err, BLTErrOk)
 		}
 	}
-
-	//// range scan and check keys are sorted
-	//itrCnt := 0
-	//bltree.err = -1
-	//for slot := bltree.startKey(nil); bltree.err != BLTErrOk; slot = bltree.nextKey(slot) {
-	//	slotType := bltree.cursor.Typ(slot)
-	//	if slotType != Unique {
-	//		continue
-	//	}
-	//	key := bltree.cursor.Key(slot)
-	//	if bytes.Compare(key, keys[itrCnt]) != 0 {
-	//		t.Errorf("key = %v, want %v", key, keys[itrCnt])
-	//	}
-	//	keyBuf := bytes.NewBuffer(key)
-	//	readKey := uint64(math.MaxUint64)
-	//	binary.Read(keyBuf, binary.LittleEndian, &readKey)
-	//	fmt.Println("readKey: ", readKey)
-	//
-	//	val := bltree.cursor.Value(slot)
-	//	valBuf := bytes.NewBuffer(*val)
-	//	readVal := uint32(math.MaxUint32)
-	//	binary.Read(valBuf, binary.LittleEndian, &readVal)
-	//	fmt.Println("readVal: ", readVal)
-	//	itrCnt++
-	//}
 
 	num, keyArr, valArr := bltree.RangeScan(nil, nil)
 	fmt.Println(num, keyArr, valArr)
