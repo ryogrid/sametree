@@ -1,9 +1,27 @@
 package blink_tree
 
 import (
+	"bytes"
 	"log"
 	"sync/atomic"
 )
+
+type BLTreeItr struct {
+	keys   [][]byte
+	vals   [][]byte
+	curIdx uint32
+	elems  uint32
+}
+
+func (itr *BLTreeItr) Next() (ok bool, key []byte, value []byte) {
+	if itr.curIdx >= itr.elems {
+		return false, nil, nil
+	}
+	key = itr.keys[itr.curIdx]
+	value = itr.vals[itr.curIdx]
+	itr.curIdx++
+	return true, key, value
+}
 
 type BLTree struct {
 	mgr    BufMgr // buffer manager for thread
@@ -228,6 +246,7 @@ func (tree *BLTree) deletePage(set *PageSet, mode BLTLockMode) BLTErr {
 // if page becomes empty, delete it from the btree
 func (tree *BLTree) deleteKey(key []byte, lvl uint8) BLTErr {
 	var set PageSet
+
 	slot := tree.mgr.LoadPage(&set, key, lvl, LockWrite, &tree.reads, &tree.writes)
 	if slot == 0 {
 		return tree.err
@@ -929,4 +948,98 @@ func (tree *BLTree) startKey(key []byte) uint32 {
 	tree.mgr.UnlockPage(LockRead, set.latch)
 	tree.mgr.UnpinLatch(set.latch)
 	return slot
+}
+
+// nil argument for lowerKey means no lower bound
+// nil argument for upperKey means no upper bound
+// ATTENTION: this method call is not atomic with otehr tree operations
+func (tree *BLTree) RangeScan(lowerKey []byte, upperKey []byte) (num int, retKeyArr [][]byte, retValArr [][]byte) {
+	retKeyArr = make([][]byte, 0)
+	retValArr = make([][]byte, 0)
+	itrCnt := 0
+
+	curSet := new(PageSet)
+
+	slot := tree.mgr.LoadPage(curSet, lowerKey, 0, LockRead, &tree.reads, &tree.writes)
+
+	getKV := func() bool {
+		slotType := curSet.page.Typ(slot)
+		if slotType != Unique {
+			return true
+		}
+		key := curSet.page.Key(slot)
+		val := curSet.page.Value(slot)
+
+		// if upperKey is nil, then this condition is always false
+		if bytes.Compare(key, upperKey) < 0 {
+			return false
+		}
+
+		retKeyArr = append(retKeyArr, key)
+		retValArr = append(retValArr, *val)
+		itrCnt++
+		return true
+	}
+
+	freePinLatchs := func(latch *LatchSet) {
+		tree.mgr.UnlockPage(LockRead, latch)
+		tree.mgr.UnpinLatch(latch)
+	}
+
+	readEntriesOfCurSet := func() bool {
+		for slot < curSet.page.Cnt {
+			if curSet.page.Dead(slot) {
+				slot++
+				continue
+			} else {
+				if ok := getKV(); !ok {
+					return false
+				}
+			}
+			slot++
+		}
+		return true
+	}
+
+	for {
+		right := GetID(&curSet.page.Right)
+
+		// the first page is tail or reached tail
+		if right == 0 {
+			readEntriesOfCurSet()
+			break
+		}
+
+		if ok := readEntriesOfCurSet(); !ok {
+			// reached upperKey
+			break
+		}
+
+		prevPageLatch := curSet.latch
+
+		curSet.latch = tree.mgr.PinLatch(right, true, &tree.reads, &tree.writes)
+		if curSet.latch != nil {
+			curSet.page = tree.mgr.MapPage(curSet.latch)
+		} else {
+			panic("PinLatch failed")
+		}
+		tree.mgr.LockPage(LockRead, curSet.latch)
+
+		// free latch prev page
+		freePinLatchs(prevPageLatch)
+	}
+
+	// free the last page latch
+	freePinLatchs(curSet.latch)
+	return itrCnt, retKeyArr, retValArr
+}
+
+func (tree *BLTree) GetRangeItr(lowerKey []byte, upperKey []byte) *BLTreeItr {
+	elems, keys, vals := tree.RangeScan(lowerKey, upperKey)
+	return &BLTreeItr{
+		keys:   keys,
+		vals:   vals,
+		curIdx: 0,
+		elems:  uint32(elems),
+	}
 }

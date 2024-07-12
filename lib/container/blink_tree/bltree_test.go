@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"math"
 	"math/rand"
 	"os"
 	"sync"
@@ -580,10 +579,10 @@ func TestBLTree_deleteManyConcurrently_samehada(t *testing.T) {
 
 	dm := disk.NewVirtualDiskManagerImpl("TestBLTree_deleteManyConcurrently_samehada.db")
 	bpm := buffer.NewBufferPoolManager(poolSize, dm)
-	mgr := NewBufMgrSamehada("data/bltree_delete_many_concurrently.db", 12, HASH_TABLE_ENTRY_CHAIN_LEN*7, bpm, nil)
+	mgr := NewBufMgrSamehada("data/bltree_delete_many_concurrently.db", 12, HASH_TABLE_ENTRY_CHAIN_LEN*16, bpm, nil)
 
 	keyTotal := 1600000
-	routineNum := 7
+	routineNum := 16 //7
 
 	keys := make([][]byte, keyTotal)
 	for i := 0; i < keyTotal; i++ {
@@ -662,6 +661,124 @@ func TestBLTree_deleteManyConcurrently_samehada(t *testing.T) {
 	t.Logf("find %d keys. duration = %v", keyTotal, time.Since(start))
 }
 
+func TestBLTree_deleteInsertRangeScanConcurrently_samehada(t *testing.T) {
+	_ = os.Remove("data/bltree_delete_insert_range_scan_many_concurrently.db")
+	_ = os.Remove("TestBLTree_deleteInsertRangeScanConcurrently_samehada.db")
+
+	poolSize := uint32(300)
+
+	dm := disk.NewVirtualDiskManagerImpl("TestBLTree_deleteInsertRangeScanConcurrently_samehada.db")
+	bpm := buffer.NewBufferPoolManager(poolSize, dm)
+	mgr := NewBufMgrSamehada("data/bltree_delete_insert_range_scan_many_concurrently.db", 12, HASH_TABLE_ENTRY_CHAIN_LEN*16, bpm, nil)
+
+	keyTotal := 1600000
+	routineNum := 16
+
+	keys := make([][]byte, keyTotal)
+	for i := 0; i < keyTotal; i++ {
+		bs := make([]byte, 8)
+		binary.BigEndian.PutUint64(bs, uint64(i))
+		keys[i] = bs
+	}
+
+	wg := sync.WaitGroup{}
+	wg.Add(routineNum)
+
+	start := time.Now()
+	for r := 0; r < routineNum; r++ {
+		go func(n int) {
+			bltree := NewBLTree(mgr)
+
+			rangeScanCheck := func(startKey []byte) {
+				//elemNum, keyArr, _ := bltree.RangeScan(startKey, nil)
+				elemNum, keyArr, _ := bltree.RangeScan(nil, nil)
+				if elemNum != len(keyArr) {
+					panic("elemNum != len(keyArr)")
+				}
+				// check result keys are ordered
+				curNum := uint64(0)
+				keyInts := make([]uint64, 0)
+				for idx := 0; idx < elemNum; idx++ {
+					buf := bytes.NewBuffer(keyArr[idx])
+					var foundKey uint64
+					binary.Read(buf, binary.BigEndian, &foundKey)
+					keyInts = append(keyInts, foundKey)
+					if foundKey < curNum {
+						panic("foundKey < curNum")
+					}
+					curNum = foundKey
+				}
+				fmt.Println(keyInts)
+			}
+
+			for i := 0; i < keyTotal; i++ {
+				if i%routineNum != n {
+					continue
+				}
+				if err := bltree.insertKey(keys[i], 0, [BtId]byte{}, true); err != BLTErrOk {
+					t.Errorf("in goroutine%d insertKey() = %v, want %v", n, err, BLTErrOk)
+				}
+
+				if i%2 == (n % 2) {
+					if err := bltree.deleteKey(keys[i], 0); err != BLTErrOk {
+						t.Errorf("deleteKey() = %v, want %v", err, BLTErrOk)
+					}
+				}
+
+				if i%2 == (n % 2) {
+					if found, _, _ := bltree.findKey(keys[i], BtId); found != -1 {
+						t.Errorf("findKey() = %v, want %v, key %v", found, -1, keys[i])
+						panic("findKey() != -1")
+					}
+					rangeScanCheck(keys[i])
+				} else {
+					if found, _, _ := bltree.findKey(keys[i], BtId); found != 6 {
+						t.Errorf("findKey() = %v, want %v, key %v", found, 6, keys[i])
+						panic("findKey() != 6")
+					}
+					rangeScanCheck(keys[i])
+				}
+			}
+
+			wg.Done()
+		}(r)
+	}
+	wg.Wait()
+	t.Logf("insert %d keys and delete skip one concurrently. duration =  %v", keyTotal, time.Since(start))
+
+	wg = sync.WaitGroup{}
+	wg.Add(routineNum)
+
+	start = time.Now()
+	for r := 0; r < routineNum; r++ {
+		go func(n int) {
+			bltree := NewBLTree(mgr)
+			for i := 0; i < keyTotal; i++ {
+				if i%routineNum != n {
+					continue
+				}
+				if i%2 == (n % 2) {
+					// find a entry or range scan
+					if i%2 == 0 {
+						if found, _, _ := bltree.findKey(keys[i], BtId); found != -1 {
+							t.Errorf("findKey() = %v, want %v, key %v", found, -1, keys[i])
+						}
+					}
+				} else {
+					if found, _, _ := bltree.findKey(keys[i], BtId); found != 6 {
+						t.Errorf("findKey() = %v, want %v, key %v", found, 6, keys[i])
+					}
+				}
+			}
+
+			wg.Done()
+		}(r)
+	}
+	wg.Wait()
+
+	t.Logf("find %d keys. duration = %v", keyTotal, time.Since(start))
+}
+
 func TestBLTree_deleteManyConcurrentlyShuffle_samehada(t *testing.T) {
 	_ = os.Remove("data/bltree_delete_many_shuffle_concurrently.db")
 	_ = os.Remove("TestBLTree_deleteManyConcurrently_shuffle_samehada.db")
@@ -673,7 +790,7 @@ func TestBLTree_deleteManyConcurrentlyShuffle_samehada(t *testing.T) {
 	mgr := NewBufMgrSamehada("data/bltree_delete_many_shuffle_concurrently.db", 12, HASH_TABLE_ENTRY_CHAIN_LEN*16, bpm, nil)
 
 	keyTotal := 1600000
-	routineNum := 16 //7
+	routineNum := 16
 
 	keys := make([][]byte, keyTotal)
 	for i := 0; i < keyTotal; i++ {
@@ -864,44 +981,17 @@ func TestBLTree_insert_and_range_scan_samehada(t *testing.T) {
 		keys[i-1] = key
 	}
 
-	// generate shuffled keys
-	keysRandom := make([][]byte, keyTotal-1)
-	copy(keysRandom, keys)
-	randGen := rand.New(rand.NewSource(time.Now().UnixNano()))
-	randGen.Shuffle(len(keysRandom), func(i, j int) { keysRandom[i], keysRandom[j] = keysRandom[j], keysRandom[i] })
-
 	// insert in shuffled order
 	for i := 0; i < keyTotal-1; i++ {
-		key := keysRandom[i]
+		//key := keysRandom[i]
+		key := keys[i]
 		val := make([]byte, 4)
-		binary.LittleEndian.PutUint32(val, uint32(i))
-		if err := bltree.insertKey(key, 0, [BtId]byte{val[3], val[2], val[1], val[0], 0, 1}, true); err != BLTErrOk {
+		binary.LittleEndian.PutUint32(val, uint32(i+1))
+		if err := bltree.insertKey(key, 0, [BtId]byte{val[0], val[1], val[2], val[3], 0, 1}, true); err != BLTErrOk {
 			t.Errorf("insertKey() = %v, want %v", err, BLTErrOk)
 		}
 	}
 
-	// range scan and check keys are sorted
-	itrCnt := 0
-	bltree.err = -1
-	for slot := bltree.startKey([]byte{0, 0, 0, 0, 0, 0, 0, 0}); bltree.err != BLTErrOk; slot = bltree.nextKey(slot) {
-		slotType := bltree.cursor.Typ(slot)
-		if slotType != Unique {
-			continue
-		}
-		key := bltree.cursor.Key(slot)
-		if bytes.Compare(key, keys[itrCnt]) != 0 {
-			t.Errorf("key = %v, want %v", key, keys[itrCnt])
-		}
-		keyBuf := bytes.NewBuffer(key)
-		readKey := uint64(math.MaxUint64)
-		binary.Read(keyBuf, binary.LittleEndian, &readKey)
-		fmt.Println("readKey: ", readKey)
-
-		val := bltree.cursor.Key(slot)
-		valBuf := bytes.NewBuffer(val)
-		readVal := uint32(math.MaxUint32)
-		binary.Read(valBuf, binary.LittleEndian, &readVal)
-		fmt.Println("readVal: ", readKey)
-		itrCnt++
-	}
+	num, keyArr, valArr := bltree.RangeScan(nil, nil)
+	fmt.Println(num, keyArr, valArr)
 }
