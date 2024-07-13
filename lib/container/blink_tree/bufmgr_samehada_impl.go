@@ -3,6 +3,7 @@ package blink_tree
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -159,19 +160,7 @@ func NewBufMgrSamehada(name string, bits uint8, nodeMax uint, bpm *buffer.Buffer
 		//PutID(mgr.pageZero.AllocRight(), MinLvl)
 	}
 
-	//flag := syscall.PROT_READ | syscall.PROT_WRITE
-	//mgr.pageZero.alloc, err = syscall.Mmap(int(mgr.idx.Fd()), 0, int(mgr.pageSize), flag, syscall.MAP_SHARED)
-	//if err != nil {
-	//	errPrintf("Unable to mmap btree page zero: %v\n", err)
-	//	mgr.Close()
-	//	return nil
-	//}
 	mgr.pageZero.alloc = allocBytes
-
-	// comment out because of panic
-	//if err := syscall.Mlock(mgr.pageZero); err != nil {
-	//	log.Panicf("Unable to mlock btree page zero: %v", err)
-	//}
 
 	return &mgr
 }
@@ -319,9 +308,9 @@ func (mgr *BufMgrSamehadaImpl) Close() {
 	pageZero.PageHeader.Right = *mgr.pageZero.AllocRight()
 	pageZero.PageHeader.Bits = mgr.pageBits
 	pageZero.Data = mgr.pageZero.alloc[PageHeaderSize:]
-	//pageZero.Data = make([]byte, mgr.pageDataSize)
+
+	// Note: WritePage is called in this
 	mgr.serializePageIdMappingToPage(pageZero)
-	mgr.WritePage(pageZero, 0, true)
 
 	// flush dirty pool pages to the btree
 	var slot uint32
@@ -336,15 +325,7 @@ func (mgr *BufMgrSamehadaImpl) Close() {
 		}
 	}
 
-	errPrintf("%d buffer pool pages flushed\n", num)
-
-	//if err := syscall.Munmap(mgr.pageZero.alloc); err != nil {
-	//	errPrintf("Unable to munmap btree page zero: %v\n", err)
-	//}
-
-	//if err := mgr.idx.Close(); err != nil {
-	//	errPrintf("Unable to close btree file: %v\n", err)
-	//}
+	fmt.Println(num, "buffer pool pages flushed")
 }
 
 func (mgr *BufMgrSamehadaImpl) serializePageIdMappingToPage(pageZero *Page) {
@@ -355,25 +336,67 @@ func (mgr *BufMgrSamehadaImpl) serializePageIdMappingToPage(pageZero *Page) {
 	// entry: | blink tree page id (int64 8bytes) | samehada page id (uint32 4bytes) |
 
 	// serialize page mapping data to page zero
-	mappingCnt := 0
+	mappingCnt := uint32(0)
+
+	maxSerializeNum := (mgr.pageDataSize - 8) / 12
+	curPage := pageZero
+	pageId := Uid(0)
 
 	itrFunc := func(key, value interface{}) bool {
+		// write data
 		pageNo := key.(Uid)
 		shPageId := value.(types.PageID)
 		buf := make([]byte, 12)
 		binary.LittleEndian.PutUint64(buf[0:], uint64(pageNo))
 		binary.LittleEndian.PutUint32(buf[8:], uint32(shPageId))
 		offset := 8 + pageNo*12
-		copy(pageZero.Data[offset:offset+12], buf)
+		copy(curPage.Data[offset:offset+12], buf)
 		mappingCnt++
+		if mappingCnt >= maxSerializeNum {
+			// reached capacity limit
+			shPage := mgr.bpm.NewPage()
+			if shPage == nil {
+				panic("failed to create new page")
+			}
+			nextPageId := pageId
+			// write mapping data header
+			buf2 := make([]byte, 4)
+			binary.LittleEndian.PutUint32(buf2, uint32(nextPageId))
+			copy(curPage.Data[:4], buf2)
+			binary.LittleEndian.PutUint32(buf2, mappingCnt)
+			copy(curPage.Data[4:8], buf2)
+
+			// write back to SamehadaDB's buffer pool
+			if pageId == 0 {
+				mgr.WritePage(curPage, pageId, true)
+			} else {
+				mgr.bpm.UnpinPage(types.PageID(pageId), true)
+			}
+
+			pageId = nextPageId
+			// page header is not copied due to it is not used
+			curPage.Data = shPage.Data()[PageHeaderSize:]
+			mappingCnt = 0
+		}
 		return true
 	}
 
 	mgr.pageIdConvMap.Range(itrFunc)
 
+	// write mapping data header
 	buf := make([]byte, 4)
-	binary.LittleEndian.PutUint32(buf, uint32(mappingCnt))
-	copy(pageZero.Data[:4], buf)
+	// -1 as int32
+	binary.LittleEndian.PutUint32(buf, uint32(0xffffffff))
+	copy(curPage.Data[:4], buf)
+	binary.LittleEndian.PutUint32(buf, mappingCnt)
+	copy(curPage.Data[4:8], buf)
+
+	// write back to SamehadaDB's buffer pool
+	if pageId == 0 {
+		mgr.WritePage(curPage, pageId, true)
+	} else {
+		mgr.bpm.UnpinPage(types.PageID(pageId), true)
+	}
 }
 
 func (mgr *BufMgrSamehadaImpl) deserializePageIdMappingFromPage(pageZero *Page) {
