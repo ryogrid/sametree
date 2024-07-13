@@ -74,7 +74,7 @@ func NewBufMgrSamehada(name string, bits uint8, nodeMax uint, bpm *buffer.Buffer
 	if lastPageZeroId != nil {
 		var page Page
 
-		shPageZero := mgr.bpm.FetchPage(types.PageID(*lastPageZeroId))
+		shPageZero := mgr.bpm.FetchPage(*lastPageZeroId)
 		if shPageZero == nil {
 			panic("failed to fetch page")
 		}
@@ -318,7 +318,8 @@ func (mgr *BufMgrSamehadaImpl) Close() {
 	pageZero := &pageZeroVal
 	pageZero.PageHeader.Right = *mgr.pageZero.AllocRight()
 	pageZero.PageHeader.Bits = mgr.pageBits
-	pageZero.Data = make([]byte, mgr.pageDataSize)
+	pageZero.Data = mgr.pageZero.alloc[PageHeaderSize:]
+	//pageZero.Data = make([]byte, mgr.pageDataSize)
 	mgr.serializePageIdMappingToPage(pageZero)
 	mgr.WritePage(pageZero, 0, true)
 
@@ -348,9 +349,10 @@ func (mgr *BufMgrSamehadaImpl) Close() {
 
 func (mgr *BufMgrSamehadaImpl) serializePageIdMappingToPage(pageZero *Page) {
 	// format
-	// page 0: | page header (26bytes) | mapping count (4bytes) | entry-0 (8bytes) | entry-1 (8bytes) | ... |
+	// page 0: | page header (26bytes) | next samehada page Id (4bytes) | mapping count (4bytes) | entry-0 (12bytes) | entry-1 (12bytes) | ... |
 	// mapping count: | mapping count (uint32 4bytes) |
-	// entry: | blink tree page id (uint32 4bytes) | samehada page id (uint32 4bytes) |
+	// next page Id: | next samehada page Id (uint32 4bytes) |
+	// entry: | blink tree page id (int64 8bytes) | samehada page id (uint32 4bytes) |
 
 	// serialize page mapping data to page zero
 	mappingCnt := 0
@@ -358,27 +360,17 @@ func (mgr *BufMgrSamehadaImpl) serializePageIdMappingToPage(pageZero *Page) {
 	itrFunc := func(key, value interface{}) bool {
 		pageNo := key.(Uid)
 		shPageId := value.(types.PageID)
-		buf := make([]byte, 8)
-		binary.LittleEndian.PutUint32(buf[0:], uint32(pageNo))
-		binary.LittleEndian.PutUint32(buf[4:], uint32(shPageId))
-		offset := 4 + pageNo*8
-		copy(pageZero.Data[offset:offset+8], buf)
+		buf := make([]byte, 12)
+		binary.LittleEndian.PutUint64(buf[0:], uint64(pageNo))
+		binary.LittleEndian.PutUint32(buf[8:], uint32(shPageId))
+		offset := 8 + pageNo*12
+		copy(pageZero.Data[offset:offset+12], buf)
 		mappingCnt++
 		return true
 	}
 
 	mgr.pageIdConvMap.Range(itrFunc)
 
-	/*
-		for pageNo, shPageId := range mgr.pageIdConvMap {
-			buf := make([]byte, 8)
-			binary.LittleEndian.PutUint32(buf[0:], uint32(pageNo))
-			binary.LittleEndian.PutUint32(buf[4:], uint32(shPageId))
-			offset := 4 + pageNo*8
-			copy(pageZero.Data[offset:offset+8], buf)
-			mappingCnt++
-		}
-	*/
 	buf := make([]byte, 4)
 	binary.LittleEndian.PutUint32(buf, uint32(mappingCnt))
 	copy(pageZero.Data[:4], buf)
@@ -386,10 +378,10 @@ func (mgr *BufMgrSamehadaImpl) serializePageIdMappingToPage(pageZero *Page) {
 
 func (mgr *BufMgrSamehadaImpl) deserializePageIdMappingFromPage(pageZero *Page) {
 	// deserialize page mapping data from page zero
-	mappingCnt := binary.LittleEndian.Uint32(mgr.pageZero.alloc[PageHeaderSize : PageHeaderSize+4])
+	mappingCnt := binary.LittleEndian.Uint32(pageZero.Data[4:8])
 	for i := 0; i < int(mappingCnt); i++ {
-		offset := 4 + i*8
-		pageNo := binary.LittleEndian.Uint32(pageZero.Data[offset : offset+4])
+		offset := 8 + i*12
+		pageNo := int64(binary.LittleEndian.Uint64(pageZero.Data[offset : offset+8]))
 		shPageId := binary.LittleEndian.Uint32(pageZero.Data[offset+4 : offset+8])
 		mgr.pageIdConvMap.Store(Uid(pageNo), types.PageID(shPageId))
 	}
