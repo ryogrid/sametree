@@ -330,10 +330,14 @@ func (mgr *BufMgrSamehadaImpl) Close() {
 
 func (mgr *BufMgrSamehadaImpl) serializePageIdMappingToPage(pageZero *Page) {
 	// format
-	// page 0: | page header (26bytes) | next samehada page Id (4bytes) | mapping count (4bytes) | entry-0 (12bytes) | entry-1 (12bytes) | ... |
-	// mapping count: | mapping count (uint32 4bytes) |
-	// next page Id: | next samehada page Id (uint32 4bytes) |
+	// page 0: | page header (26bytes) | next samehada page Id (4bytes) | next free blink-tree page Id (4bytes) | mapping count or free blink-tree page count in page (4bytes) | entry-0 (12bytes) | entry-1 (12bytes) | ... |
 	// entry: | blink tree page id (int64 8bytes) | samehada page id (uint32 4bytes) |
+	// NOTE: pages are chained with next samehada page id and next free blink-tree page id
+	//       but chain is separated to two chains.
+	//       page id mapping info is stored in page 0 and chain which uses next samehada page Id
+	//       free blink-tree page info is not stored in page 0 but pointer for it is stored in page 0
+	//       and the chain uses next free blink-tree page Id
+	//       when next page is not exist, next xxxxx Id is set to 0xffffffff (uint32 max value)
 
 	// serialize page mapping data to page zero
 	mappingCnt := uint32(0)
@@ -349,11 +353,12 @@ func (mgr *BufMgrSamehadaImpl) serializePageIdMappingToPage(pageZero *Page) {
 		buf := make([]byte, 12)
 		binary.LittleEndian.PutUint64(buf[0:], uint64(pageNo))
 		binary.LittleEndian.PutUint32(buf[8:], uint32(shPageId))
-		offset := 8 + pageNo*12
+		offset := 12 + pageNo*12
 		copy(curPage.Data[offset:offset+12], buf)
 		mappingCnt++
 		if mappingCnt >= maxSerializeNum {
 			// reached capacity limit
+			// TODO: (sametree) need to reuse page if already allocated
 			shPage := mgr.bpm.NewPage()
 			if shPage == nil {
 				panic("failed to create new page")
@@ -370,6 +375,8 @@ func (mgr *BufMgrSamehadaImpl) serializePageIdMappingToPage(pageZero *Page) {
 			if pageId == 0 {
 				mgr.WritePage(curPage, pageId, true)
 			} else {
+				// free samehada page
+				// (calling WritePage is not needed due to page header is not used in this case)
 				mgr.bpm.UnpinPage(types.PageID(pageId), true)
 			}
 
@@ -386,6 +393,7 @@ func (mgr *BufMgrSamehadaImpl) serializePageIdMappingToPage(pageZero *Page) {
 	// write mapping data header
 	buf := make([]byte, 4)
 	// -1 as int32
+	// this is marker for end of mapping data
 	binary.LittleEndian.PutUint32(buf, uint32(0xffffffff))
 	copy(curPage.Data[:4], buf)
 	binary.LittleEndian.PutUint32(buf, mappingCnt)
@@ -395,18 +403,61 @@ func (mgr *BufMgrSamehadaImpl) serializePageIdMappingToPage(pageZero *Page) {
 	if pageId == 0 {
 		mgr.WritePage(curPage, pageId, true)
 	} else {
+		// free samehada page
+		// (calling WritePage is not needed due to page header is not used in this case)
 		mgr.bpm.UnpinPage(types.PageID(pageId), true)
 	}
 }
 
-func (mgr *BufMgrSamehadaImpl) deserializePageIdMappingFromPage(pageZero *Page) {
+//// deserialize page mapping data from page zero
+//mappingCnt := binary.LittleEndian.Uint32(pageZero.Data[4:8])
+//for i := 0; i < int(mappingCnt); i++ {
+//	offset := 8 + i*12
+//	pageNo := int64(binary.LittleEndian.Uint64(pageZero.Data[offset : offset+8]))
+//	shPageId := binary.LittleEndian.Uint32(pageZero.Data[offset+4 : offset+8])
+//	mgr.pageIdConvMap.Store(Uid(pageNo), types.PageID(shPageId))
+//}
+
+func (mgr *BufMgrSamehadaImpl) deserializePageIdMappingFromPage(pageZero *shpage.Page) {
 	// deserialize page mapping data from page zero
-	mappingCnt := binary.LittleEndian.Uint32(pageZero.Data[4:8])
-	for i := 0; i < int(mappingCnt); i++ {
-		offset := 8 + i*12
-		pageNo := int64(binary.LittleEndian.Uint64(pageZero.Data[offset : offset+8]))
-		shPageId := binary.LittleEndian.Uint32(pageZero.Data[offset+4 : offset+8])
-		mgr.pageIdConvMap.Store(Uid(pageNo), types.PageID(shPageId))
+	isPageZero := true
+	curShPage := pageZero
+	for {
+		offset := PageHeaderSize
+		offset += 4
+		mappingCnt := binary.LittleEndian.Uint32(pageZero.Data()[offset : offset+4])
+		offset += 4 + 4
+		for ii := 0; ii < int(mappingCnt); ii++ {
+			pageNo := Uid(binary.LittleEndian.Uint64(pageZero.Data()[offset : offset+4]))
+			offset += 8
+			shPageId := types.PageID(binary.LittleEndian.Uint32(pageZero.Data()[offset+4 : offset+8]))
+			offset += 4
+			mgr.pageIdConvMap.Store(Uid(pageNo), shPageId)
+		}
+
+		nextShPageNo := int64(binary.LittleEndian.Uint32(pageZero.Data()[offset+4 : offset+4+4]))
+		if nextShPageNo == -1 {
+			if isPageZero {
+				// do nothing
+			} else {
+				// page chain end
+				mgr.bpm.UnpinPage(curShPage.GetPageId(), false)
+				return
+			}
+		} else {
+			nextShPage := mgr.bpm.FetchPage(types.PageID(nextShPageNo))
+			if nextShPage == nil {
+				panic("failed to fetch page")
+			}
+			if isPageZero {
+				// do nothing
+				isPageZero = false
+			} else {
+				mgr.bpm.UnpinPage(curShPage.GetPageId(), false)
+				isPageZero = false
+			}
+			curShPage = nextShPage
+		}
 	}
 }
 
