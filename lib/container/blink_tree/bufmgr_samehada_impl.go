@@ -83,7 +83,8 @@ func NewBufMgrSamehada(name string, bits uint8, nodeMax uint, bpm *buffer.Buffer
 		page.Data = shPageZero.Data()[PageHeaderSize:]
 		//pageZeroBytes = pageBytes
 		mgr.pageZero.alloc = shPageZero.Data()[:]
-		mgr.deserializePageIdMappingFromPage(shPageZero)
+		mgr.loadPageIdMappingOrDeallocateFreePage(shPageZero, true)
+		mgr.loadPageIdMappingOrDeallocateFreePage(shPageZero, false)
 
 		if err2 := binary.Read(bytes.NewReader(mgr.pageZero.alloc), binary.LittleEndian, &page.PageHeader); err2 != nil {
 			errPrintf("Unable to read btree file: %v\n", err2)
@@ -362,7 +363,7 @@ func (mgr *BufMgrSamehadaImpl) serializePageIdMappingOrFreePageInfoToPage(pageZe
 		buf := make([]byte, FreePageInfoSize)
 		binary.LittleEndian.PutUint64(buf[:FreePageInfoSize], uint64(pageNo))
 		offset := (NextShPageIdForIdMappingSize + NextShPageIdForFreePageInfoSize + EntryCountSize) + mappingCnt*FreePageInfoSize
-		copy(curPage.Data[offset:offset+PageIdMappingEntrySize], buf)
+		copy(curPage.Data[offset:offset+FreePageInfoSize], buf)
 	}
 
 	makeFreePageMap := func() *sync.Map {
@@ -411,6 +412,8 @@ func (mgr *BufMgrSamehadaImpl) serializePageIdMappingOrFreePageInfoToPage(pageZe
 		}
 		curPage.Data = shPage.Data()[PageHeaderSize:]
 		pageId = shPage.GetPageId()
+		// write first free page info store page ID to page zero
+		binary.LittleEndian.PutUint32(pageZero.Data[NextShPageIdForIdMappingSize:NextShPageIdForIdMappingSize+NextShPageIdForFreePageInfoSize], uint32(pageId))
 	}
 
 	var isPageZero bool
@@ -493,26 +496,54 @@ func (mgr *BufMgrSamehadaImpl) serializePageIdMappingOrFreePageInfoToPage(pageZe
 	}
 }
 
-func (mgr *BufMgrSamehadaImpl) deserializePageIdMappingFromPage(pageZero *shpage.Page) {
+func (mgr *BufMgrSamehadaImpl) loadPageIdMappingOrDeallocateFreePage(pageZero *shpage.Page, isIdMapping bool) {
 	// deserialize page mapping data from page zero
 	isPageZero := true
-	curShPage := pageZero
+	if !isIdMapping {
+		isPageZero = false
+	}
+	var curShPage *shpage.Page
+	if isIdMapping {
+		curShPage = pageZero
+	} else {
+		offset := PageHeaderSize + NextShPageIdForIdMappingSize
+		nextShPageNo := int32(binary.LittleEndian.Uint32(pageZero.Data()[offset : offset+NextShPageIdForFreePageInfoSize]))
+		if nextShPageNo != -1 {
+			curShPage = mgr.bpm.FetchPage(types.PageID(nextShPageNo))
+			if curShPage == nil {
+				panic("failed to fetch page")
+			}
+		}
+	}
 	for {
 		offset := PageHeaderSize
 		mappingCnt := binary.LittleEndian.Uint32(curShPage.Data()[offset+NextShPageIdForIdMappingSize+NextShPageIdForFreePageInfoSize : offset+NextShPageIdForIdMappingSize+NextShPageIdForFreePageInfoSize+EntryCountSize])
 		offset += NextShPageIdForIdMappingSize + NextShPageIdForFreePageInfoSize + EntryCountSize
 		for ii := 0; ii < int(mappingCnt); ii++ {
-			pageNo := Uid(binary.LittleEndian.Uint64(curShPage.Data()[offset : offset+PageIdMappingBLETreePageSize]))
-			offset += PageIdMappingBLETreePageSize
-			shPageId := types.PageID(binary.LittleEndian.Uint32(curShPage.Data()[offset : offset+PageIdMappingShPageSize]))
-			offset += PageIdMappingShPageSize
-			mgr.pageIdConvMap.Store(pageNo, shPageId)
+			if isIdMapping {
+				pageNo := Uid(binary.LittleEndian.Uint64(curShPage.Data()[offset : offset+PageIdMappingBLETreePageSize]))
+				offset += PageIdMappingBLETreePageSize
+				shPageId := types.PageID(binary.LittleEndian.Uint32(curShPage.Data()[offset : offset+PageIdMappingShPageSize]))
+				offset += PageIdMappingShPageSize
+				mgr.pageIdConvMap.Store(pageNo, shPageId)
+			} else {
+				pageNo := Uid(binary.LittleEndian.Uint64(curShPage.Data()[offset : offset+FreePageInfoSize]))
+				if shPageId, ok := mgr.pageIdConvMap.Load(pageNo); ok {
+					// pageNo becomes not be used and mapped SamehadaDB page is deallocated
+					mgr.bpm.DeallocatePage(shPageId.(types.PageID), true)
+				}
+			}
 		}
 		offset = PageHeaderSize
-		nextShPageNo := int32(binary.LittleEndian.Uint32(curShPage.Data()[offset : offset+NextShPageIdForIdMappingSize]))
+		var nextShPageNo int32
+		if isIdMapping {
+			nextShPageNo = int32(binary.LittleEndian.Uint32(curShPage.Data()[offset : offset+NextShPageIdForIdMappingSize]))
+		} else {
+			nextShPageNo = int32(binary.LittleEndian.Uint32(curShPage.Data()[offset+NextShPageIdForIdMappingSize : offset + +NextShPageIdForIdMappingSize + NextShPageIdForFreePageInfoSize]))
+		}
 		if nextShPageNo == -1 {
+			// page chain end
 			if !isPageZero {
-				// page chain end
 				mgr.bpm.UnpinPage(curShPage.GetPageId(), false)
 			}
 			return
