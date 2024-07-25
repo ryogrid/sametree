@@ -107,7 +107,6 @@ func NewBufMgrSamehada(name string, bits uint8, nodeMax uint, bpm *buffer.Buffer
 	var allocBytes []byte
 	if initit {
 		alloc := NewPage(mgr.pageDataSize)
-		//fmt.Println("NewBufMgrSamehadaImpl (1) alloc: ", *alloc)
 		alloc.Bits = mgr.pageBits
 		PutID(&alloc.Right, MinLvl+1)
 
@@ -317,10 +316,10 @@ func (mgr *BufMgrSamehadaImpl) Close() {
 		}
 	}
 
+	fmt.Println(num, "dirty pages flushed")
+
 	// Note: WritePage is called in these methods call
 	mgr.serializePageIdMappingToPage(pageZero)
-
-	fmt.Println(num, "buffer pool pages flushed")
 }
 
 func (mgr *BufMgrSamehadaImpl) serializePageIdMappingToPage(pageZero *Page) {
@@ -412,17 +411,17 @@ func (mgr *BufMgrSamehadaImpl) deserializePageIdMappingFromPage(pageZero *shpage
 	curShPage := pageZero
 	for {
 		offset := PageHeaderSize
-		mappingCnt := binary.LittleEndian.Uint32(pageZero.Data()[offset+NextShPageIdForIdMappingSize+NextShPageIdForFreePageInfoSize : offset+NextShPageIdForIdMappingSize+NextShPageIdForFreePageInfoSize+EntryCountSize])
+		mappingCnt := binary.LittleEndian.Uint32(curShPage.Data()[offset+NextShPageIdForIdMappingSize+NextShPageIdForFreePageInfoSize : offset+NextShPageIdForIdMappingSize+NextShPageIdForFreePageInfoSize+EntryCountSize])
 		offset += NextShPageIdForIdMappingSize + NextShPageIdForFreePageInfoSize + EntryCountSize
 		for ii := 0; ii < int(mappingCnt); ii++ {
-			pageNo := Uid(binary.LittleEndian.Uint64(pageZero.Data()[offset : offset+PageIdMappingBLETreePageSize]))
+			pageNo := Uid(binary.LittleEndian.Uint64(curShPage.Data()[offset : offset+PageIdMappingBLETreePageSize]))
 			offset += PageIdMappingBLETreePageSize
-			shPageId := types.PageID(binary.LittleEndian.Uint32(pageZero.Data()[offset : offset+PageIdMappingShPageSize]))
+			shPageId := types.PageID(binary.LittleEndian.Uint32(curShPage.Data()[offset : offset+PageIdMappingShPageSize]))
 			offset += PageIdMappingShPageSize
 			mgr.pageIdConvMap.Store(pageNo, shPageId)
 		}
 		offset = PageHeaderSize
-		nextShPageNo := int32(binary.LittleEndian.Uint32(pageZero.Data()[offset : offset+NextShPageIdForIdMappingSize]))
+		nextShPageNo := int32(binary.LittleEndian.Uint32(curShPage.Data()[offset : offset+NextShPageIdForIdMappingSize]))
 		if nextShPageNo == -1 {
 			if !isPageZero {
 				// page chain end

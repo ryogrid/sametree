@@ -927,7 +927,7 @@ func TestBLTree_restart_samehada(t *testing.T) {
 	mgr := NewBufMgrSamehada("data/bltree_restart_samehada.db", 12, HASH_TABLE_ENTRY_CHAIN_LEN*2, bpm, nil)
 	bltree := NewBLTree(mgr)
 
-	firstNum := uint64(1000)
+	firstNum := uint64(100000)
 
 	for i := uint64(0); i <= firstNum; i++ {
 		bs := make([]byte, 8)
@@ -963,7 +963,7 @@ func TestBLTree_restart_samehada(t *testing.T) {
 	mgr = NewBufMgrSamehada("data/bltree_restart_samehada.db", 12, 48, bpm, &pageZeroShId)
 	bltree = NewBLTree(mgr)
 
-	secondNum := uint64(2000)
+	secondNum := firstNum * 2
 
 	idMappingReloaded := bltree.mgr.(*BufMgrSamehadaImpl).pageIdConvMap
 
