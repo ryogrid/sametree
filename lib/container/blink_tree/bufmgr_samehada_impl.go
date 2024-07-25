@@ -320,7 +320,7 @@ func (mgr *BufMgrSamehadaImpl) Close() {
 
 	// Note: WritePage is called in these methods call
 	mgr.serializePageIdMappingToPage(pageZero)
-	//mgr.seralizeFreePageInfoToPage(pageZero)
+	mgr.seralizeFreePageInfoToPage(pageZero)
 
 	mgr.WritePage(pageZero, 0, true)
 }
@@ -374,12 +374,15 @@ func (mgr *BufMgrSamehadaImpl) serializePageIdMappingOrFreePageInfoToPage(pageZe
 		PutID(&set.page.Right, GetID(&mgr.pageZero.chain))
 		for {
 			freePageNo := GetID(&set.page.Right)
-			//fmt.Println("NewPage pageNo: ", pageNo)
 			if freePageNo > 0 {
-				set.latch = mgr.PinLatch(freePageNo, true, &read, &write)
+				set.latch = mgr.PinLatch(freePageNo, false, &read, &write)
 				if set.latch != nil {
 					set.page = mgr.MapPage(set.latch)
-					freePageMap.Store(freePageNo, true)
+					if set.page.Free {
+						freePageMap.Store(freePageNo, true)
+					} else {
+						break
+					}
 				} else {
 					break
 				}
