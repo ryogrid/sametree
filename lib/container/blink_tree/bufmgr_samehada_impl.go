@@ -124,6 +124,8 @@ func NewBufMgrSamehada(name string, bits uint8, nodeMax uint, bpm *buffer.Buffer
 		}
 		//mgr.pageZero.alloc = buf.Bytes()
 		allocBytes = buf.Bytes()
+		allocBytes = append(allocBytes, make([]byte, mgr.pageSize-PageHeaderSize)...)
+		mgr.pageZero.alloc = allocBytes
 
 		alloc = NewPage(mgr.pageDataSize)
 		alloc.Bits = mgr.pageBits
@@ -160,7 +162,7 @@ func NewBufMgrSamehada(name string, bits uint8, nodeMax uint, bpm *buffer.Buffer
 		//PutID(mgr.pageZero.AllocRight(), MinLvl)
 	}
 
-	mgr.pageZero.alloc = allocBytes
+	//mgr.pageZero.alloc = allocBytes
 
 	return &mgr
 }
@@ -256,8 +258,8 @@ func (mgr *BufMgrSamehadaImpl) WritePage(page *Page, pageNo Uid, isDirty bool) B
 			if _, ok := mgr.pageIdConvMap.Load(pageNo); ok {
 				panic("page already exists")
 			}
-			shPageId = shPage.GetPageId()
 		}
+		shPageId = shPage.GetPageId()
 		mgr.pageIdConvMap.Store(pageNo, shPageId)
 	}
 
@@ -272,7 +274,7 @@ func (mgr *BufMgrSamehadaImpl) WritePage(page *Page, pageNo Uid, isDirty bool) B
 		}
 	}
 
-	if isDirty {
+	if isDirty && !isNoEntry {
 		headerBuf := bytes.NewBuffer(make([]byte, 0, PageHeaderSize))
 		binary.Write(headerBuf, binary.LittleEndian, page.PageHeader)
 		headerBytes := headerBuf.Bytes()
@@ -302,9 +304,6 @@ func (mgr *BufMgrSamehadaImpl) Close() {
 	pageZero.PageHeader.Bits = mgr.pageBits
 	pageZero.Data = mgr.pageZero.alloc[PageHeaderSize:]
 
-	// Note: WritePage is called in this
-	mgr.serializePageIdMappingToPage(pageZero)
-
 	// flush dirty pool pages to the btree
 	var slot uint32
 	for slot = 1; slot <= mgr.latchDeployed; slot++ {
@@ -317,6 +316,9 @@ func (mgr *BufMgrSamehadaImpl) Close() {
 			num++
 		}
 	}
+
+	// Note: WritePage is called in these methods call
+	mgr.serializePageIdMappingToPage(pageZero)
 
 	fmt.Println(num, "buffer pool pages flushed")
 }
@@ -337,7 +339,8 @@ func (mgr *BufMgrSamehadaImpl) serializePageIdMappingToPage(pageZero *Page) {
 
 	maxSerializeNum := (mgr.pageDataSize - (NextShPageIdForIdMappingSize + NextShPageIdForFreePageInfoSize + EntryCountSize)) / PageIdMappingEntrySize
 	curPage := pageZero
-	pageId := Uid(0)
+	pageId := types.PageID(0)
+	isPageZero := true
 
 	itrFunc := func(key, value interface{}) bool {
 		// write data
@@ -345,8 +348,8 @@ func (mgr *BufMgrSamehadaImpl) serializePageIdMappingToPage(pageZero *Page) {
 		shPageId := value.(types.PageID)
 		buf := make([]byte, PageIdMappingEntrySize)
 		binary.LittleEndian.PutUint64(buf[:PageIdMappingBLETreePageSize], uint64(pageNo))
-		binary.LittleEndian.PutUint32(buf[PageIdMappingShPageSize:], uint32(shPageId))
-		offset := (NextShPageIdForIdMappingSize + NextShPageIdForFreePageInfoSize + EntryCountSize) + pageNo*PageIdMappingEntrySize
+		binary.LittleEndian.PutUint32(buf[PageIdMappingBLETreePageSize:PageIdMappingBLETreePageSize+PageIdMappingShPageSize], uint32(shPageId))
+		offset := (NextShPageIdForIdMappingSize + NextShPageIdForFreePageInfoSize + EntryCountSize) + mappingCnt*PageIdMappingEntrySize
 		copy(curPage.Data[offset:offset+PageIdMappingEntrySize], buf)
 		mappingCnt++
 		if mappingCnt >= maxSerializeNum {
@@ -356,7 +359,7 @@ func (mgr *BufMgrSamehadaImpl) serializePageIdMappingToPage(pageZero *Page) {
 			if shPage == nil {
 				panic("failed to create new page")
 			}
-			nextPageId := pageId
+			nextPageId := shPage.GetPageId()
 			// write mapping data header
 			buf2 := make([]byte, NextShPageIdForIdMappingSize)
 			binary.LittleEndian.PutUint32(buf2, uint32(nextPageId))
@@ -365,12 +368,13 @@ func (mgr *BufMgrSamehadaImpl) serializePageIdMappingToPage(pageZero *Page) {
 			copy(curPage.Data[NextShPageIdForIdMappingSize+NextShPageIdForFreePageInfoSize:NextShPageIdForIdMappingSize+NextShPageIdForFreePageInfoSize+EntryCountSize], buf2)
 
 			// write back to SamehadaDB's buffer pool
-			if pageId == 0 {
-				mgr.WritePage(curPage, pageId, true)
+			if isPageZero {
+				mgr.WritePage(curPage, Uid(0), true)
+				isPageZero = false
 			} else {
 				// free samehada page
 				// (calling WritePage is not needed due to page header is not used in this case)
-				mgr.bpm.UnpinPage(types.PageID(pageId), true)
+				mgr.bpm.UnpinPage(pageId, true)
 			}
 
 			pageId = nextPageId
@@ -393,12 +397,12 @@ func (mgr *BufMgrSamehadaImpl) serializePageIdMappingToPage(pageZero *Page) {
 	copy(curPage.Data[NextShPageIdForIdMappingSize+NextShPageIdForFreePageInfoSize:NextShPageIdForIdMappingSize+NextShPageIdForFreePageInfoSize+EntryCountSize], buf)
 
 	// write back to SamehadaDB's buffer pool
-	if pageId == 0 {
-		mgr.WritePage(curPage, pageId, true)
+	if isPageZero {
+		mgr.WritePage(curPage, Uid(0), true)
 	} else {
 		// free samehada page
 		// (calling WritePage is not needed due to page header is not used in this case)
-		mgr.bpm.UnpinPage(types.PageID(pageId), true)
+		mgr.bpm.UnpinPage(pageId, true)
 	}
 }
 
@@ -418,7 +422,7 @@ func (mgr *BufMgrSamehadaImpl) deserializePageIdMappingFromPage(pageZero *shpage
 			mgr.pageIdConvMap.Store(pageNo, shPageId)
 		}
 		offset = PageHeaderSize
-		nextShPageNo := int64(binary.LittleEndian.Uint32(pageZero.Data()[offset : offset+NextShPageIdForIdMappingSize+NextShPageIdForFreePageInfoSize : offset+NextShPageIdForIdMappingSize]))
+		nextShPageNo := int32(binary.LittleEndian.Uint32(pageZero.Data()[offset : offset+NextShPageIdForIdMappingSize]))
 		if nextShPageNo == -1 {
 			if !isPageZero {
 				// page chain end
@@ -871,10 +875,10 @@ func (mgr *BufMgrSamehadaImpl) GetPagePool() []Page {
 	return mgr.pagePool
 }
 
-func (mgr *BufMgrSamehadaImpl) GetMappedShPageIdOfPageZero() *types.PageID {
-	if val, ok := mgr.pageIdConvMap.Load(0); ok {
+func (mgr *BufMgrSamehadaImpl) GetMappedShPageIdOfPageZero() types.PageID {
+	if val, ok := mgr.pageIdConvMap.Load(Uid(0)); ok {
 		ret := val.(types.PageID)
-		return &ret
+		return ret
 	} else {
 		panic("page zero mapping not found")
 	}
