@@ -344,7 +344,7 @@ func (mgr *BufMgrSamehadaImpl) serializePageIdMappingOrFreePageInfoToPage(pageZe
 	//       and the chain uses next free blink-tree page Id
 	//       when next page is not exist, next xxxxx Id is set to 0xffffffff (uint32 max value)
 
-	var curPage *Page
+	var curPage Page
 	mappingCnt := uint32(0)
 
 	serializeIdMappingEntryFunc := func(key, value interface{}) {
@@ -399,7 +399,7 @@ func (mgr *BufMgrSamehadaImpl) serializePageIdMappingOrFreePageInfoToPage(pageZe
 
 	var pageId types.PageID
 	if isIdMapping {
-		curPage = pageZero
+		curPage.Data = pageZero.Data
 		pageId = mgr.GetMappedShPageIdOfPageZero()
 	} else {
 		shPage := mgr.bpm.NewPage()
@@ -434,12 +434,12 @@ func (mgr *BufMgrSamehadaImpl) serializePageIdMappingOrFreePageInfoToPage(pageZe
 			}
 			nextPageId := shPage.GetPageId()
 			// write mapping data header
-			buf2 := make([]byte, NextShPageIdForIdMappingSize)
+			buf2 := make([]byte, ShPageIdSize)
 			binary.LittleEndian.PutUint32(buf2, uint32(nextPageId))
 			if isIdMapping {
 				copy(curPage.Data[:NextShPageIdForIdMappingSize], buf2)
 			} else {
-				copy(curPage.Data[NextShPageIdForIdMappingSize:NextShPageIdForFreePageInfoSize], buf2)
+				copy(curPage.Data[NextShPageIdForIdMappingSize:NextShPageIdForIdMappingSize+NextShPageIdForFreePageInfoSize], buf2)
 			}
 			binary.LittleEndian.PutUint32(buf2, mappingCnt)
 			copy(curPage.Data[NextShPageIdForIdMappingSize+NextShPageIdForFreePageInfoSize:NextShPageIdForIdMappingSize+NextShPageIdForFreePageInfoSize+EntryCountSize], buf2)
@@ -477,7 +477,7 @@ func (mgr *BufMgrSamehadaImpl) serializePageIdMappingOrFreePageInfoToPage(pageZe
 	if isIdMapping {
 		copy(curPage.Data[:NextShPageIdForIdMappingSize], buf)
 	} else {
-		copy(curPage.Data[NextShPageIdForIdMappingSize:NextShPageIdForFreePageInfoSize], buf)
+		copy(curPage.Data[NextShPageIdForIdMappingSize:NextShPageIdForIdMappingSize+NextShPageIdForFreePageInfoSize], buf)
 	}
 	binary.LittleEndian.PutUint32(buf, mappingCnt)
 	copy(curPage.Data[NextShPageIdForIdMappingSize+NextShPageIdForFreePageInfoSize:NextShPageIdForIdMappingSize+NextShPageIdForFreePageInfoSize+EntryCountSize], buf)
