@@ -380,7 +380,7 @@ func (mgr *BufMgrSamehadaImpl) serializePageIdMappingOrFreePageInfoToPage(pageZe
 				if set.latch != nil {
 					set.page = mgr.MapPage(set.latch)
 					if set.page.Free {
-						fmt.Println("free page found: ", freePageNo)
+						//fmt.Println("free page found: ", freePageNo)
 						freePageMap.Store(freePageNo, true)
 					} else {
 						break
@@ -529,9 +529,11 @@ func (mgr *BufMgrSamehadaImpl) loadPageIdMappingOrDeallocateFreePage(pageZero *s
 				mgr.pageIdConvMap.Store(pageNo, shPageId)
 			} else {
 				pageNo := Uid(binary.LittleEndian.Uint64(curShPage.Data()[offset : offset+FreePageInfoSize]))
+				offset += FreePageInfoSize
 				if shPageId, ok := mgr.pageIdConvMap.Load(pageNo); ok {
 					// pageNo becomes not be used and mapped SamehadaDB page is deallocated
 					mgr.bpm.DeallocatePage(shPageId.(types.PageID), true)
+					//fmt.Println("deallocated page: ", pageNo)
 					mgr.pageIdConvMap.Delete(pageNo)
 				}
 			}
