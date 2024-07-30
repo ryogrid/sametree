@@ -34,12 +34,11 @@ const (
 	ShPageIdSize = 4
 	// constants for page ID mapping entries serialization
 	// and free page ID list serialization
-	NextShPageIdForFreePageInfoSize = ShPageIdSize // size of next page id in bytes
-	NextShPageIdForIdMappingSize    = ShPageIdSize
-	EntryCountSize                  = 4
-	PageIdMappingBLETreePageSize    = 8
-	PageIdMappingShPageSize         = ShPageIdSize
-	PageIdMappingEntrySize          = PageIdMappingBLETreePageSize + PageIdMappingShPageSize
+	NextShPageIdForIdMappingSize = ShPageIdSize
+	EntryCountSize               = 4
+	PageIdMappingBLETreePageSize = 8
+	PageIdMappingShPageSize      = ShPageIdSize
+	PageIdMappingEntrySize       = PageIdMappingBLETreePageSize + PageIdMappingShPageSize
 
 	// constants for free page entries serialization
 	FreePageInfoSize = 8
