@@ -319,7 +319,7 @@ func TestPage_FindSlot(t *testing.T) {
 func TestCopyPage(t *testing.T) {
 	set1 := PageSet{
 		page:  NewPage(10),
-		latch: &LatchSet{},
+		latch: &Latchs{},
 	}
 
 	set2 := PageSet{

@@ -81,7 +81,7 @@ type (
 	}
 	PageSet struct {
 		page  *Page
-		latch *LatchSet
+		latch *Latchs
 	}
 )
 

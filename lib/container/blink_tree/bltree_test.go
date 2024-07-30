@@ -54,7 +54,7 @@ func TestBLTree_collapseRoot(t *testing.T) {
 			}
 			var set PageSet
 			set.latch = tree.mgr.PinLatch(RootPage, true, &tree.reads, &tree.writes)
-			set.page = tree.mgr.MapPage(set.latch)
+			set.page = tree.mgr.GetRefOfPageAtPool(set.latch)
 			if got := tree.collapseRoot(&set); got != tt.want {
 				t.Errorf("collapseRoot() = %v, want %v", got, tt.want)
 			}
@@ -96,7 +96,7 @@ func TestBLTree_cleanPage_full_page(t *testing.T) {
 
 	set := PageSet{
 		page:  NewPage(mgr.GetPageDataSize()),
-		latch: &LatchSet{},
+		latch: &Latchs{},
 	}
 	copy(set.page.Data, data)
 	set.page.PageHeader = PageHeader{
