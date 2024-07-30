@@ -30,6 +30,18 @@ const (
 
 	PageHeaderSize = 26 // size of page header in bytes
 	SlotSize       = 6  // size of slot in bytes
+
+	ShPageIdSize = 4
+	// constants for page ID mapping entries serialization
+	// and free page ID list serialization
+	NextShPageIdForIdMappingSize = ShPageIdSize
+	EntryCountSize               = 4
+	PageIdMappingBLETreePageSize = 8
+	PageIdMappingShPageSize      = ShPageIdSize
+	PageIdMappingEntrySize       = PageIdMappingBLETreePageSize + PageIdMappingShPageSize
+
+	// constants for free page entries serialization
+	FreePageInfoSize = 8
 )
 
 type (
@@ -68,7 +80,7 @@ type (
 	}
 	PageSet struct {
 		page  *Page
-		latch *LatchSet
+		latch *Latchs
 	}
 )
 

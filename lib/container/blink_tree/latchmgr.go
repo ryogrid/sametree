@@ -68,8 +68,8 @@ type (
 		latch SpinLatch
 	}
 
-	// LatchSet is latch manager table structure
-	LatchSet struct {
+	// Latchs is latch manager table structure
+	Latchs struct {
 		pageNo Uid       // latch set page number
 		readWr BLTRWLock // read / write page lock
 		access BLTRWLock // access intent / page delete

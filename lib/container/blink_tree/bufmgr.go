@@ -1,21 +1,21 @@
 package blink_tree
 
 type BufMgr interface {
-	ReadPage(page *Page, pageNo Uid) BLTErr
-	WritePage(page *Page, pageNo Uid, isDirty bool) BLTErr
+	PageIn(page *Page, pageNo Uid) BLTErr
+	PageOut(page *Page, pageNo Uid, isDirty bool) BLTErr
 	Close()
 	PoolAudit()
 	LatchLink(hashIdx uint, slot uint, pageNo Uid, loadIt bool, reads *uint) BLTErr
-	MapPage(latch *LatchSet) *Page
-	PinLatch(pageNo Uid, loadIt bool, reads *uint, writes *uint) *LatchSet
-	UnpinLatch(latch *LatchSet)
+	GetRefOfPageAtPool(latch *Latchs) *Page
+	PinLatch(pageNo Uid, loadIt bool, reads *uint, writes *uint) *Latchs
+	UnpinLatch(latch *Latchs)
 	NewPage(set *PageSet, contents *Page, reads *uint, writes *uint) BLTErr
-	LoadPage(set *PageSet, key []byte, lvl uint8, lock BLTLockMode, reads *uint, writes *uint) uint32
-	FreePage(set *PageSet)
-	LockPage(mode BLTLockMode, latch *LatchSet)
-	UnlockPage(mode BLTLockMode, latch *LatchSet)
+	PageFetch(set *PageSet, key []byte, lvl uint8, lock BLTLockMode, reads *uint, writes *uint) uint32
+	PageFree(set *PageSet)
+	PageLock(mode BLTLockMode, latch *Latchs)
+	PageUnlock(mode BLTLockMode, latch *Latchs)
 	GetPageDataSize() uint32
-	GetLatchSets() []LatchSet
+	GetLatchSets() []Latchs
 	GetPageBits() uint8
 	GetPageZero() *PageZero
 	GetPagePool() []Page

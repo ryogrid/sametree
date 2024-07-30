@@ -36,11 +36,11 @@ func TestNewBufMgr(t *testing.T) {
 			page := Page{}
 			page_ := &page
 			for i := 0; i < 3; i++ {
-				if err := mgr.ReadPage(page_, Uid(i)); err != BLTErrOk {
+				if err := mgr.PageIn(page_, Uid(i)); err != BLTErrOk {
 					t.Errorf("NewBufMgr() failed to read page. err: %v", err)
 				}
 			}
-			if err := mgr.ReadPage(page_, Uid(3)); err != BLTErrRead {
+			if err := mgr.PageIn(page_, Uid(3)); err != BLTErrRead {
 				t.Errorf("NewBufMgr() failed to read page with unexpected err: %v", err)
 			}
 		})
@@ -212,7 +212,7 @@ func TestBufMgr_PinLatch(t *testing.T) {
 			if tt.args.pageNo > 2 {
 				// if pageNo is over 2, we need to write the page to disk
 				p := NewPage(mgr.GetPageDataSize())
-				mgr.WritePage(p, tt.args.pageNo, true)
+				mgr.PageOut(p, tt.args.pageNo, true)
 			}
 			latch := mgr.PinLatch(tt.args.pageNo, tt.args.loadIt, &tt.args.reads, &tt.args.writes)
 			if latch == nil && tt.wantLatched {
@@ -315,7 +315,7 @@ func TestBufMgr_PinLatch_ClockWise(t *testing.T) {
 				t.Errorf("NewBufMgr() failed")
 			}
 
-			var unpinLatch *LatchSet
+			var unpinLatch *Latchs
 			for i := 3; i < int(tt.fields.nodeMax)+2; i++ {
 				latch := mgr.PinLatch(Uid(i), false, &tt.args.reads, &tt.args.writes)
 				if Uid(i) == tt.fields.unpinPageNo {

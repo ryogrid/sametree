@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"github.com/ryogrid/sametree/lib/types"
 	"math/rand"
 	"os"
 	"sync"
@@ -53,7 +54,7 @@ func TestBLTree_collapseRoot(t *testing.T) {
 			}
 			var set PageSet
 			set.latch = tree.mgr.PinLatch(RootPage, true, &tree.reads, &tree.writes)
-			set.page = tree.mgr.MapPage(set.latch)
+			set.page = tree.mgr.GetRefOfPageAtPool(set.latch)
 			if got := tree.collapseRoot(&set); got != tt.want {
 				t.Errorf("collapseRoot() = %v, want %v", got, tt.want)
 			}
@@ -95,7 +96,7 @@ func TestBLTree_cleanPage_full_page(t *testing.T) {
 
 	set := PageSet{
 		page:  NewPage(mgr.GetPageDataSize()),
-		latch: &LatchSet{},
+		latch: &Latchs{},
 	}
 	copy(set.page.Data, data)
 	set.page.PageHeader = PageHeader{
@@ -917,13 +918,16 @@ func TestBLTree_restart_samehada(t *testing.T) {
 
 	poolSize := uint32(100)
 
-	dm := disk.NewDiskManagerImpl("TestBLTree_restart_samehada.db")
+	//dm := disk.NewDiskManagerImpl("TestBLTree_restart_samehada.db")
+
+	// use virtual disk manager which does file I/O on memory
+	dm := disk.NewVirtualDiskManagerImpl("TestBLTree_restart_samehada.db")
 	bpm := buffer.NewBufferPoolManager(poolSize, dm)
 
-	mgr := NewBufMgrSamehada("data/bltree_restart_samehada.db", 12, 48, bpm, nil)
+	mgr := NewBufMgrSamehada("data/bltree_restart_samehada.db", 12, HASH_TABLE_ENTRY_CHAIN_LEN*2, bpm, nil)
 	bltree := NewBLTree(mgr)
 
-	firstNum := uint64(1000)
+	firstNum := uint64(100000)
 
 	for i := uint64(0); i <= firstNum; i++ {
 		bs := make([]byte, 8)
@@ -933,18 +937,54 @@ func TestBLTree_restart_samehada(t *testing.T) {
 		}
 	}
 
+	// delete half of inserted keys
+	for i := uint64(0); i < firstNum/2; i++ {
+		bs := make([]byte, 8)
+		binary.BigEndian.PutUint64(bs, i)
+		if err := bltree.deleteKey(bs, 0); err != BLTErrOk {
+			t.Errorf("insertKey() = %v, want %v", err, BLTErrOk)
+		}
+	}
+
+	// keep page ID mapping info on memory for testing
+	idMappingsBeforeShutdown := bltree.mgr.(*BufMgrSamehadaImpl).pageIdConvMap
+
+	// shutdown BLTree
+	// includes perpetuation of page ID mappings and free page IDs
 	mgr.Close()
+
+	// shutdown SamehadaDB which own parent buffer manager of BufMgr
 	pageZeroShId := mgr.(*BufMgrSamehadaImpl).GetMappedShPageIdOfPageZero()
 	bpm.FlushAllPages()
-	dm.ShutDown()
+	//dm.ShutDown()
 
-	dm = disk.NewDiskManagerImpl("TestBLTree_restart_samehada.db")
+	//dm = disk.NewDiskManagerImpl("TestBLTree_restart_samehada.db")
 	bpm = buffer.NewBufferPoolManager(poolSize, dm)
-	mgr = NewBufMgrSamehada("data/bltree_restart_samehada.db", 12, 48, bpm, pageZeroShId)
+	mgr = NewBufMgrSamehada("data/bltree_restart_samehada.db", 12, 48, bpm, &pageZeroShId)
 	bltree = NewBLTree(mgr)
 
-	secondNum := uint64(2000)
+	secondNum := firstNum * 2
 
+	idMappingReloaded := bltree.mgr.(*BufMgrSamehadaImpl).pageIdConvMap
+
+	idMappingCnt := 0
+	// check reloaded pageID mapping info
+	idMappingsBeforeShutdown.Range(func(key, value interface{}) bool {
+		pageId := key.(Uid)
+		if shPageId, ok := idMappingReloaded.Load(pageId); !ok {
+			//fmt.Println("pageId mapping may be removed as freed page ID: ", pageId)
+			idMappingCnt++
+			return true
+		} else if value.(types.PageID) != shPageId.(types.PageID) {
+			t.Errorf("pageId mapping entry is broken.")
+			return false
+		}
+		idMappingCnt++
+		return true
+	})
+	fmt.Println("id mapping reloaded:", idMappingCnt)
+
+	// check behavior of BLTree after relaunch
 	for i := firstNum; i <= secondNum; i++ {
 		bs := make([]byte, 8)
 		binary.BigEndian.PutUint64(bs, i)
@@ -953,7 +993,7 @@ func TestBLTree_restart_samehada(t *testing.T) {
 		}
 	}
 
-	for i := uint64(0); i <= secondNum; i++ {
+	for i := firstNum / 2; i <= secondNum; i++ {
 		bs := make([]byte, 8)
 		binary.BigEndian.PutUint64(bs, i)
 		if _, foundKey, _ := bltree.findKey(bs, BtId); bytes.Compare(foundKey, bs) != 0 {

@@ -108,8 +108,8 @@ func (tree *BLTree) fixFence(set *PageSet, lvl uint8) BLTErr {
 	var value [BtId]byte
 	PutID(&value, set.latch.pageNo)
 
-	tree.mgr.LockPage(LockParent, set.latch)
-	tree.mgr.UnlockPage(LockWrite, set.latch)
+	tree.mgr.PageLock(LockParent, set.latch)
+	tree.mgr.PageUnlock(LockWrite, set.latch)
 
 	// insert new (now smaller) fence key
 
@@ -122,7 +122,7 @@ func (tree *BLTree) fixFence(set *PageSet, lvl uint8) BLTErr {
 		return err
 	}
 
-	tree.mgr.UnlockPage(LockParent, set.latch)
+	tree.mgr.PageUnlock(LockParent, set.latch)
 	tree.mgr.UnpinLatch(set.latch)
 	return BLTErrOk
 }
@@ -147,24 +147,24 @@ func (tree *BLTree) collapseRoot(root *PageSet) BLTErr {
 		pageNo = GetIDFromValue(root.page.Value(idx))
 		child.latch = tree.mgr.PinLatch(pageNo, true, &tree.reads, &tree.writes)
 		if child.latch != nil {
-			child.page = tree.mgr.MapPage(child.latch)
+			child.page = tree.mgr.GetRefOfPageAtPool(child.latch)
 		} else {
 			return tree.err
 		}
 
-		tree.mgr.LockPage(LockDelete, child.latch)
-		tree.mgr.LockPage(LockWrite, child.latch)
+		tree.mgr.PageLock(LockDelete, child.latch)
+		tree.mgr.PageLock(LockWrite, child.latch)
 
 		MemCpyPage(root.page, child.page)
 		root.latch.dirty = true
-		tree.mgr.FreePage(&child)
+		tree.mgr.PageFree(&child)
 
 		if !(root.page.Lvl > 1 && root.page.Act == 1) {
 			break
 		}
 	}
 
-	tree.mgr.UnlockPage(LockWrite, root.latch)
+	tree.mgr.PageUnlock(LockWrite, root.latch)
 	tree.mgr.UnpinLatch(root.latch)
 	return BLTErrOk
 }
@@ -183,13 +183,13 @@ func (tree *BLTree) deletePage(set *PageSet, mode BLTLockMode) BLTErr {
 	pageNo := GetID(&set.page.Right)
 	right.latch = tree.mgr.PinLatch(pageNo, true, &tree.reads, &tree.writes)
 	if right.latch != nil {
-		right.page = tree.mgr.MapPage(right.latch)
+		right.page = tree.mgr.GetRefOfPageAtPool(right.latch)
 	} else {
 		return BLTErrOk
 	}
 
-	tree.mgr.LockPage(LockWrite, right.latch)
-	tree.mgr.LockPage(mode, right.latch)
+	tree.mgr.PageLock(LockWrite, right.latch)
+	tree.mgr.PageLock(mode, right.latch)
 
 	// cache copy of key to update
 	higherFence := right.page.Key(right.page.Cnt)
@@ -214,11 +214,11 @@ func (tree *BLTree) deletePage(set *PageSet, mode BLTLockMode) BLTErr {
 	var value [BtId]byte
 	PutID(&value, set.latch.pageNo)
 
-	tree.mgr.LockPage(LockParent, right.latch)
-	tree.mgr.UnlockPage(LockWrite, right.latch)
-	tree.mgr.UnlockPage(mode, right.latch)
-	tree.mgr.LockPage(LockParent, set.latch)
-	tree.mgr.UnlockPage(LockWrite, set.latch)
+	tree.mgr.PageLock(LockParent, right.latch)
+	tree.mgr.PageUnlock(LockWrite, right.latch)
+	tree.mgr.PageUnlock(mode, right.latch)
+	tree.mgr.PageLock(LockParent, set.latch)
+	tree.mgr.PageUnlock(LockWrite, set.latch)
 
 	if err := tree.insertKey(higherFence, set.page.Lvl+1, value, true); err != BLTErrOk {
 		return err
@@ -230,11 +230,11 @@ func (tree *BLTree) deletePage(set *PageSet, mode BLTLockMode) BLTErr {
 	}
 
 	// obtain delete and write locks to right node
-	tree.mgr.UnlockPage(LockParent, right.latch)
-	tree.mgr.LockPage(LockDelete, right.latch)
-	tree.mgr.LockPage(LockWrite, right.latch)
-	tree.mgr.FreePage(&right)
-	tree.mgr.UnlockPage(LockParent, set.latch)
+	tree.mgr.PageUnlock(LockParent, right.latch)
+	tree.mgr.PageLock(LockDelete, right.latch)
+	tree.mgr.PageLock(LockWrite, right.latch)
+	tree.mgr.PageFree(&right)
+	tree.mgr.PageUnlock(LockParent, set.latch)
 	tree.mgr.UnpinLatch(set.latch)
 	//tree.found = true
 	return BLTErrOk
@@ -247,7 +247,7 @@ func (tree *BLTree) deletePage(set *PageSet, mode BLTLockMode) BLTErr {
 func (tree *BLTree) deleteKey(key []byte, lvl uint8) BLTErr {
 	var set PageSet
 
-	slot := tree.mgr.LoadPage(&set, key, lvl, LockWrite, &tree.reads, &tree.writes)
+	slot := tree.mgr.PageFetch(&set, key, lvl, LockWrite, &tree.reads, &tree.writes)
 	if slot == 0 {
 		return tree.err
 	}
@@ -310,7 +310,7 @@ func (tree *BLTree) deleteKey(key []byte, lvl uint8) BLTErr {
 		return tree.deletePage(&set, LockNone)
 	}
 	set.latch.dirty = true
-	tree.mgr.UnlockPage(LockWrite, set.latch)
+	tree.mgr.PageUnlock(LockWrite, set.latch)
 	tree.mgr.UnpinLatch(set.latch)
 	return BLTErrOk
 }
@@ -327,7 +327,7 @@ func (tree *BLTree) findNext(set *PageSet, slot uint32) uint32 {
 	if pageNo > 0 {
 		set.latch = tree.mgr.PinLatch(pageNo, true, &tree.reads, &tree.writes)
 		if set.latch != nil {
-			set.page = tree.mgr.MapPage(set.latch)
+			set.page = tree.mgr.GetRefOfPageAtPool(set.latch)
 		} else {
 			return 0
 		}
@@ -337,11 +337,11 @@ func (tree *BLTree) findNext(set *PageSet, slot uint32) uint32 {
 	}
 
 	// obtain access lock using lock chaining with Access mode
-	tree.mgr.LockPage(LockAccess, set.latch)
-	tree.mgr.UnlockPage(LockRead, prevLatch)
+	tree.mgr.PageLock(LockAccess, set.latch)
+	tree.mgr.PageUnlock(LockRead, prevLatch)
 	tree.mgr.UnpinLatch(prevLatch)
-	tree.mgr.LockPage(LockRead, set.latch)
-	tree.mgr.UnlockPage(LockAccess, set.latch)
+	tree.mgr.PageLock(LockRead, set.latch)
+	tree.mgr.PageUnlock(LockAccess, set.latch)
 	return 1
 }
 
@@ -353,7 +353,7 @@ func (tree *BLTree) findNext(set *PageSet, slot uint32) uint32 {
 func (tree *BLTree) findKey(key []byte, valMax int) (ret int, foundKey []byte, foundValue []byte) {
 	var set PageSet
 	ret = -1
-	slot := tree.mgr.LoadPage(&set, key, 0, LockRead, &tree.reads, &tree.writes)
+	slot := tree.mgr.PageFetch(&set, key, 0, LockRead, &tree.reads, &tree.writes)
 	for ; slot > 0; slot = tree.findNext(&set, slot) {
 		ptr := set.page.Key(slot)
 
@@ -401,7 +401,7 @@ func (tree *BLTree) findKey(key []byte, valMax int) (ret int, foundKey []byte, f
 
 	}
 
-	tree.mgr.UnlockPage(LockRead, set.latch)
+	tree.mgr.PageUnlock(LockRead, set.latch)
 	tree.mgr.UnpinLatch(set.latch)
 
 	return ret, foundKey, foundValue
@@ -505,7 +505,7 @@ func (tree *BLTree) cleanPage(set *PageSet, keyLen uint8, slot uint32, valLen ui
 // splitRoot
 //
 // split the root and raise the height of the btree
-func (tree *BLTree) splitRoot(root *PageSet, right *LatchSet) BLTErr {
+func (tree *BLTree) splitRoot(root *PageSet, right *Latchs) BLTErr {
 	var left PageSet
 	nxt := tree.mgr.GetPageDataSize()
 	var value [BtId]byte
@@ -551,7 +551,7 @@ func (tree *BLTree) splitRoot(root *PageSet, right *LatchSet) BLTErr {
 	root.page.Lvl++
 
 	// release and unpin root pages
-	tree.mgr.UnlockPage(LockWrite, root.latch)
+	tree.mgr.PageUnlock(LockWrite, root.latch)
 	tree.mgr.UnpinLatch(root.latch)
 	tree.mgr.UnpinLatch(right)
 	return BLTErrOk
@@ -678,7 +678,7 @@ func (tree *BLTree) splitPage(set *PageSet) uint {
 // fix keys for newly split page
 // call with page locked
 // @return unlocked
-func (tree *BLTree) splitKeys(set *PageSet, right *LatchSet) BLTErr {
+func (tree *BLTree) splitKeys(set *PageSet, right *Latchs) BLTErr {
 	lvl := set.page.Lvl
 
 	// if current page is the root page, split it
@@ -688,14 +688,14 @@ func (tree *BLTree) splitKeys(set *PageSet, right *LatchSet) BLTErr {
 
 	leftKey := set.page.Key(set.page.Cnt)
 
-	page := tree.mgr.MapPage(right)
+	page := tree.mgr.GetRefOfPageAtPool(right)
 
 	rightKey := page.Key(page.Cnt)
 
 	// insert new fences in their parent pages
-	tree.mgr.LockPage(LockParent, right)
-	tree.mgr.LockPage(LockParent, set.latch)
-	tree.mgr.UnlockPage(LockWrite, set.latch)
+	tree.mgr.PageLock(LockParent, right)
+	tree.mgr.PageLock(LockParent, set.latch)
+	tree.mgr.PageUnlock(LockWrite, set.latch)
 
 	// insert new fence for reformulated left block of smaller keys
 	var value [BtId]byte
@@ -712,9 +712,9 @@ func (tree *BLTree) splitKeys(set *PageSet, right *LatchSet) BLTErr {
 		return err
 	}
 
-	tree.mgr.UnlockPage(LockParent, set.latch)
+	tree.mgr.PageUnlock(LockParent, set.latch)
 	tree.mgr.UnpinLatch(set.latch)
-	tree.mgr.UnlockPage(LockParent, right)
+	tree.mgr.PageUnlock(LockParent, right)
 	tree.mgr.UnpinLatch(right)
 	return BLTErrOk
 }
@@ -786,7 +786,7 @@ func (tree *BLTree) insertSlot(
 	set.page.SetDead(slot, false)
 
 	if release {
-		tree.mgr.UnlockPage(LockWrite, set.latch)
+		tree.mgr.PageUnlock(LockWrite, set.latch)
 		tree.mgr.UnpinLatch(set.latch)
 	}
 
@@ -821,7 +821,7 @@ func (tree *BLTree) insertKey(key []byte, lvl uint8, value [BtId]byte, uniq bool
 	}
 
 	for {
-		slot = tree.mgr.LoadPage(&set, key, lvl, LockWrite, &tree.reads, &tree.writes)
+		slot = tree.mgr.PageFetch(&set, key, lvl, LockWrite, &tree.reads, &tree.writes)
 		if slot > 0 {
 			ptr = set.page.Key(slot)
 		} else {
@@ -875,7 +875,7 @@ func (tree *BLTree) insertKey(key []byte, lvl uint8, value [BtId]byte, uniq bool
 		set.latch.dirty = true
 		set.page.SetDead(slot, false)
 		set.page.SetValue(value[:], slot)
-		tree.mgr.UnlockPage(LockWrite, set.latch)
+		tree.mgr.PageUnlock(LockWrite, set.latch)
 		tree.mgr.UnpinLatch(set.latch)
 		return BLTErrOk
 		//}
@@ -916,14 +916,14 @@ func (tree *BLTree) nextKey(slot uint32) uint32 {
 
 		set.latch = tree.mgr.PinLatch(right, true, &tree.reads, &tree.writes)
 		if set.latch != nil {
-			set.page = tree.mgr.MapPage(set.latch)
+			set.page = tree.mgr.GetRefOfPageAtPool(set.latch)
 		} else {
 			return 0
 		}
 
-		tree.mgr.LockPage(LockRead, set.latch)
+		tree.mgr.PageLock(LockRead, set.latch)
 		MemCpyPage(tree.cursor, set.page)
-		tree.mgr.UnlockPage(LockRead, set.latch)
+		tree.mgr.PageUnlock(LockRead, set.latch)
 		tree.mgr.UnpinLatch(set.latch)
 		slot = 0
 	}
@@ -937,7 +937,7 @@ func (tree *BLTree) startKey(key []byte) uint32 {
 	var set PageSet
 
 	// cache page for retrieval
-	slot := tree.mgr.LoadPage(&set, key, 0, LockRead, &tree.reads, &tree.writes)
+	slot := tree.mgr.PageFetch(&set, key, 0, LockRead, &tree.reads, &tree.writes)
 	if slot > 0 {
 		MemCpyPage(tree.cursor, set.page)
 	} else {
@@ -945,7 +945,7 @@ func (tree *BLTree) startKey(key []byte) uint32 {
 	}
 
 	tree.cursorPage = set.latch.pageNo
-	tree.mgr.UnlockPage(LockRead, set.latch)
+	tree.mgr.PageUnlock(LockRead, set.latch)
 	tree.mgr.UnpinLatch(set.latch)
 	return slot
 }
@@ -960,7 +960,7 @@ func (tree *BLTree) RangeScan(lowerKey []byte, upperKey []byte) (num int, retKey
 
 	curSet := new(PageSet)
 
-	slot := tree.mgr.LoadPage(curSet, lowerKey, 0, LockRead, &tree.reads, &tree.writes)
+	slot := tree.mgr.PageFetch(curSet, lowerKey, 0, LockRead, &tree.reads, &tree.writes)
 
 	getKV := func() bool {
 		slotType := curSet.page.Typ(slot)
@@ -981,8 +981,8 @@ func (tree *BLTree) RangeScan(lowerKey []byte, upperKey []byte) (num int, retKey
 		return true
 	}
 
-	freePinLatchs := func(latch *LatchSet) {
-		tree.mgr.UnlockPage(LockRead, latch)
+	freePinLatchs := func(latch *Latchs) {
+		tree.mgr.PageUnlock(LockRead, latch)
 		tree.mgr.UnpinLatch(latch)
 	}
 
@@ -1019,11 +1019,11 @@ func (tree *BLTree) RangeScan(lowerKey []byte, upperKey []byte) (num int, retKey
 
 		curSet.latch = tree.mgr.PinLatch(right, true, &tree.reads, &tree.writes)
 		if curSet.latch != nil {
-			curSet.page = tree.mgr.MapPage(curSet.latch)
+			curSet.page = tree.mgr.GetRefOfPageAtPool(curSet.latch)
 		} else {
 			panic("PinLatch failed")
 		}
-		tree.mgr.LockPage(LockRead, curSet.latch)
+		tree.mgr.PageLock(LockRead, curSet.latch)
 
 		// free latch prev page
 		freePinLatchs(prevPageLatch)
