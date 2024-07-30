@@ -517,6 +517,9 @@ func (mgr *BufMgrSamehadaImpl) loadPageIdMappingOrDeallocateFreePage(pageZero *s
 				// unpin current page
 				mgr.bpm.UnpinPage(curShPage.GetPageId(), false)
 			}
+			if !isIdMapping {
+				fmt.Println("next free page info page: ", nextShPageNo)
+			}
 			isPageZero = false
 			curShPage = nextShPage
 		}

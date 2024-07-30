@@ -916,7 +916,7 @@ func TestBLTree_restart_samehada(t *testing.T) {
 	_ = os.Remove(`data/bltree_restart_samehada.db`)
 	_ = os.Remove("TestBLTree_restart_samehada.db")
 
-	poolSize := uint32(100)
+	poolSize := uint32(1000)
 
 	//dm := disk.NewDiskManagerImpl("TestBLTree_restart_samehada.db")
 
@@ -924,10 +924,10 @@ func TestBLTree_restart_samehada(t *testing.T) {
 	dm := disk.NewVirtualDiskManagerImpl("TestBLTree_restart_samehada.db")
 	bpm := buffer.NewBufferPoolManager(poolSize, dm)
 
-	mgr := NewBufMgrSamehada("data/bltree_restart_samehada.db", 12, HASH_TABLE_ENTRY_CHAIN_LEN*2, bpm, nil)
+	mgr := NewBufMgrSamehada("data/bltree_restart_samehada.db", 12, HASH_TABLE_ENTRY_CHAIN_LEN*60, bpm, nil)
 	bltree := NewBLTree(mgr)
 
-	firstNum := uint64(100000)
+	firstNum := uint64(2000000)
 
 	for i := uint64(0); i <= firstNum; i++ {
 		bs := make([]byte, 8)
@@ -972,7 +972,7 @@ func TestBLTree_restart_samehada(t *testing.T) {
 	idMappingsBeforeShutdown.Range(func(key, value interface{}) bool {
 		pageId := key.(Uid)
 		if shPageId, ok := idMappingReloaded.Load(pageId); !ok {
-			fmt.Println("pageId mapping may be removed as freed page ID: ", pageId)
+			//fmt.Println("pageId mapping may be removed as freed page ID: ", pageId)
 			idMappingCnt++
 			return true
 		} else if value.(types.PageID) != shPageId.(types.PageID) {
