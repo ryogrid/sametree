@@ -29,7 +29,7 @@ func TestBLTree_collapseRoot(t *testing.T) {
 		{
 			name: "collapse root",
 			fields: fields{
-				mgr: NewBufMgr("data/collapse_root_test.db", 13, 20),
+				mgr: *NewBufMgr("data/collapse_root_test.db", 13, 20, nil, nil),
 			},
 			want: BLTErrOk,
 		},
@@ -73,8 +73,8 @@ func TestBLTree_collapseRoot(t *testing.T) {
 
 func TestBLTree_cleanPage_full_page(t *testing.T) {
 	_ = os.Remove("data/bltree_clean_page.db")
-	mgr := NewBufMgr("data/bltree_clean_page.db", 15, HASH_TABLE_ENTRY_CHAIN_LEN*7)
-	bltree := NewBLTree(mgr)
+	mgr := NewBufMgr("data/bltree_clean_page.db", 15, HASH_TABLE_ENTRY_CHAIN_LEN*7, nil, nil)
+	bltree := NewBLTree(*mgr)
 
 	f, err := os.OpenFile("testdata/page_for_clean", os.O_RDWR, 0666)
 	if err != nil {
@@ -117,8 +117,8 @@ func TestBLTree_cleanPage_full_page(t *testing.T) {
 }
 
 func TestBLTree_insert_and_find(t *testing.T) {
-	mgr := NewBufMgr("data/bltree_insert_and_find.db", 13, 20)
-	bltree := NewBLTree(mgr)
+	mgr := NewBufMgr("data/bltree_insert_and_find.db", 13, 20, nil, nil)
+	bltree := NewBLTree(*mgr)
 	if valLen, _, _ := bltree.findKey([]byte{1, 1, 1, 1}, BtId); valLen >= 0 {
 		t.Errorf("findKey() = %v, want %v", valLen, -1)
 	}
@@ -141,8 +141,8 @@ func TestBLTree_insert_and_find_samehada(t *testing.T) {
 
 	os.Remove("data/bltree_insert_and_find_samehada.db")
 
-	mgr := NewBufMgrSamehada("data/bltree_insert_and_find_samehada.db", 12, 20, bpm, nil)
-	bltree := NewBLTree(mgr)
+	mgr := NewBufMgr("data/bltree_insert_and_find_samehada.db", 12, 20, bpm, nil)
+	bltree := NewBLTree(*mgr)
 	if valLen, _, _ := bltree.findKey([]byte{1, 1, 1, 1}, BtId); valLen >= 0 {
 		t.Errorf("findKey() = %v, want %v", valLen, -1)
 	}
@@ -159,8 +159,8 @@ func TestBLTree_insert_and_find_samehada(t *testing.T) {
 
 func TestBLTree_insert_and_find_many(t *testing.T) {
 	_ = os.Remove(`data/bltree_insert_and_find_many.db`)
-	mgr := NewBufMgr("data/bltree_insert_and_find_many.db", 12, 36)
-	bltree := NewBLTree(mgr)
+	mgr := NewBufMgr("data/bltree_insert_and_find_many.db", 12, 36, nil, nil)
+	bltree := NewBLTree(*mgr)
 
 	num := uint64(160000)
 
@@ -189,8 +189,8 @@ func TestBLTree_insert_and_find_many_samehada(t *testing.T) {
 	dm := disk.NewDiskManagerTest()
 	bpm := buffer.NewBufferPoolManager(poolSize, dm)
 
-	mgr := NewBufMgrSamehada("data/bltree_insert_and_find_many_samehada.db", 12, 36, bpm, nil)
-	bltree := NewBLTree(mgr)
+	mgr := NewBufMgr("data/bltree_insert_and_find_many_samehada.db", 12, 36, bpm, nil)
+	bltree := NewBLTree(*mgr)
 
 	num := uint64(160000)
 
@@ -213,7 +213,7 @@ func TestBLTree_insert_and_find_many_samehada(t *testing.T) {
 
 func TestBLTree_insert_and_find_concurrently_org(t *testing.T) {
 	_ = os.Remove(`data/insert_and_find_concurrently.db`)
-	mgr := NewBufMgr("data/insert_and_find_concurrently.db", 13, HASH_TABLE_ENTRY_CHAIN_LEN*7)
+	mgr := NewBufMgr("data/insert_and_find_concurrently.db", 13, HASH_TABLE_ENTRY_CHAIN_LEN*7, nil, nil)
 
 	keyTotal := 1600000
 
@@ -224,7 +224,7 @@ func TestBLTree_insert_and_find_concurrently_org(t *testing.T) {
 		keys[i] = bs
 	}
 
-	insertAndFindConcurrently(t, 7, mgr, keys)
+	insertAndFindConcurrently(t, 7, *mgr, keys)
 }
 
 func TestBLTree_insert_and_find_concurrently_samehada(t *testing.T) {
@@ -237,7 +237,7 @@ func TestBLTree_insert_and_find_concurrently_samehada(t *testing.T) {
 	dm := disk.NewVirtualDiskManagerImpl("TestBLTree_insert_and_find_concurrently_samehada.db")
 	bpm := buffer.NewBufferPoolManager(poolSize, dm)
 
-	mgr := NewBufMgrSamehada("data/insert_and_find_concurrently_samehada.db", 12, HASH_TABLE_ENTRY_CHAIN_LEN*7, bpm, nil)
+	mgr := NewBufMgr("data/insert_and_find_concurrently_samehada.db", 12, HASH_TABLE_ENTRY_CHAIN_LEN*7, bpm, nil)
 
 	keyTotal := 1600000
 
@@ -248,13 +248,13 @@ func TestBLTree_insert_and_find_concurrently_samehada(t *testing.T) {
 		keys[i] = bs
 	}
 
-	insertAndFindConcurrently(t, 7, mgr, keys)
+	insertAndFindConcurrently(t, 7, *mgr, keys)
 	//insertAndFindConcurrently(t, 1, mgr, keys)
 }
 
 func TestBLTree_insert_and_find_concurrently_by_little_endian(t *testing.T) {
 	_ = os.Remove(`data/insert_and_find_concurrently_by_little_endian.db`)
-	mgr := NewBufMgr("data/insert_and_find_concurrently_by_little_endian.db", 13, HASH_TABLE_ENTRY_CHAIN_LEN*7)
+	mgr := NewBufMgr("data/insert_and_find_concurrently_by_little_endian.db", 13, HASH_TABLE_ENTRY_CHAIN_LEN*7, nil, nil)
 
 	keyTotal := 1600000
 
@@ -265,7 +265,7 @@ func TestBLTree_insert_and_find_concurrently_by_little_endian(t *testing.T) {
 		keys[i] = bs
 	}
 
-	insertAndFindConcurrently(t, 7, mgr, keys)
+	insertAndFindConcurrently(t, 7, *mgr, keys)
 }
 
 func insertAndFindConcurrently(t *testing.T, routineNum int, mgr BufMgr, keys [][]byte) {
@@ -322,8 +322,8 @@ func insertAndFindConcurrently(t *testing.T, routineNum int, mgr BufMgr, keys []
 }
 
 func TestBLTree_delete(t *testing.T) {
-	mgr := NewBufMgr("data/bltree_delete.db", 13, 20)
-	bltree := NewBLTree(mgr)
+	mgr := NewBufMgr("data/bltree_delete.db", 13, 20, nil, nil)
+	bltree := NewBLTree(*mgr)
 
 	key := []byte{1, 1, 1, 1}
 
@@ -342,8 +342,8 @@ func TestBLTree_delete(t *testing.T) {
 
 func TestBLTree_deleteMany(t *testing.T) {
 	_ = os.Remove(`data/bltree_delete_many.db`)
-	mgr := NewBufMgr("data/bltree_delete_many.db", 13, HASH_TABLE_ENTRY_CHAIN_LEN*7)
-	bltree := NewBLTree(mgr)
+	mgr := NewBufMgr("data/bltree_delete_many.db", 13, HASH_TABLE_ENTRY_CHAIN_LEN*7, nil, nil)
+	bltree := NewBLTree(*mgr)
 
 	keyTotal := 160000
 
@@ -386,8 +386,8 @@ func TestBLTree_deleteMany_samehada(t *testing.T) {
 	dm := disk.NewVirtualDiskManagerImpl("TestBLTree_deleteMany_samehada.db")
 	bpm := buffer.NewBufferPoolManager(poolSize, dm)
 
-	mgr := NewBufMgrSamehada("data/bltree_delete_many_samehada.db", 12, HASH_TABLE_ENTRY_CHAIN_LEN*7, bpm, nil)
-	bltree := NewBLTree(mgr)
+	mgr := NewBufMgr("data/bltree_delete_many_samehada.db", 12, HASH_TABLE_ENTRY_CHAIN_LEN*7, bpm, nil)
+	bltree := NewBLTree(*mgr)
 
 	keyTotal := 160000
 
@@ -424,8 +424,8 @@ func TestBLTree_deleteMany_samehada(t *testing.T) {
 
 func TestBLTree_deleteAll(t *testing.T) {
 	_ = os.Remove(`data/bltree_delete_all.db`)
-	mgr := NewBufMgr("data/bltree_delete_all.db", 13, HASH_TABLE_ENTRY_CHAIN_LEN*7)
-	bltree := NewBLTree(mgr)
+	mgr := NewBufMgr("data/bltree_delete_all.db", 13, HASH_TABLE_ENTRY_CHAIN_LEN*7, nil, nil)
+	bltree := NewBLTree(*mgr)
 
 	keyTotal := 1600000
 
@@ -460,8 +460,8 @@ func TestBLTree_deleteAll_samehada(t *testing.T) {
 
 	dm := disk.NewVirtualDiskManagerImpl("TestBLTree_deleteAll_samehada.db")
 	bpm := buffer.NewBufferPoolManager(poolSize, dm)
-	mgr := NewBufMgrSamehada("data/bltree_delete_all.db", 12, HASH_TABLE_ENTRY_CHAIN_LEN*7, bpm, nil)
-	bltree := NewBLTree(mgr)
+	mgr := NewBufMgr("data/bltree_delete_all.db", 12, HASH_TABLE_ENTRY_CHAIN_LEN*7, bpm, nil)
+	bltree := NewBLTree(*mgr)
 
 	keyTotal := 1600000
 
@@ -490,7 +490,7 @@ func TestBLTree_deleteAll_samehada(t *testing.T) {
 
 func TestBLTree_deleteManyConcurrently_org(t *testing.T) {
 	_ = os.Remove("data/bltree_delete_many_concurrently.db")
-	mgr := NewBufMgr("data/bltree_delete_many_concurrently.db", 12, HASH_TABLE_ENTRY_CHAIN_LEN*7)
+	mgr := NewBufMgr("data/bltree_delete_many_concurrently.db", 12, HASH_TABLE_ENTRY_CHAIN_LEN*7, nil, nil)
 
 	keyTotal := 1600000
 	routineNum := 7
@@ -508,7 +508,7 @@ func TestBLTree_deleteManyConcurrently_org(t *testing.T) {
 	start := time.Now()
 	for r := 0; r < routineNum; r++ {
 		go func(n int) {
-			bltree := NewBLTree(mgr)
+			bltree := NewBLTree(*mgr)
 			for i := 0; i < keyTotal; i++ {
 				if i%routineNum != n {
 					continue
@@ -548,7 +548,7 @@ func TestBLTree_deleteManyConcurrently_org(t *testing.T) {
 	start = time.Now()
 	for r := 0; r < routineNum; r++ {
 		go func(n int) {
-			bltree := NewBLTree(mgr)
+			bltree := NewBLTree(*mgr)
 			for i := 0; i < keyTotal; i++ {
 				if i%routineNum != n {
 					continue
@@ -580,7 +580,7 @@ func TestBLTree_deleteManyConcurrently_samehada(t *testing.T) {
 
 	dm := disk.NewVirtualDiskManagerImpl("TestBLTree_deleteManyConcurrently_samehada.db")
 	bpm := buffer.NewBufferPoolManager(poolSize, dm)
-	mgr := NewBufMgrSamehada("data/bltree_delete_many_concurrently.db", 12, HASH_TABLE_ENTRY_CHAIN_LEN*16, bpm, nil)
+	mgr := NewBufMgr("data/bltree_delete_many_concurrently.db", 12, HASH_TABLE_ENTRY_CHAIN_LEN*16, bpm, nil)
 
 	keyTotal := 1600000
 	routineNum := 16 //7
@@ -598,7 +598,7 @@ func TestBLTree_deleteManyConcurrently_samehada(t *testing.T) {
 	start := time.Now()
 	for r := 0; r < routineNum; r++ {
 		go func(n int) {
-			bltree := NewBLTree(mgr)
+			bltree := NewBLTree(*mgr)
 			for i := 0; i < keyTotal; i++ {
 				if i%routineNum != n {
 					continue
@@ -638,7 +638,7 @@ func TestBLTree_deleteManyConcurrently_samehada(t *testing.T) {
 	start = time.Now()
 	for r := 0; r < routineNum; r++ {
 		go func(n int) {
-			bltree := NewBLTree(mgr)
+			bltree := NewBLTree(*mgr)
 			for i := 0; i < keyTotal; i++ {
 				if i%routineNum != n {
 					continue
@@ -670,7 +670,7 @@ func TestBLTree_deleteInsertRangeScanConcurrently_samehada(t *testing.T) {
 
 	dm := disk.NewVirtualDiskManagerImpl("TestBLTree_deleteInsertRangeScanConcurrently_samehada.db")
 	bpm := buffer.NewBufferPoolManager(poolSize, dm)
-	mgr := NewBufMgrSamehada("data/bltree_delete_insert_range_scan_many_concurrently.db", 12, HASH_TABLE_ENTRY_CHAIN_LEN*16, bpm, nil)
+	mgr := NewBufMgr("data/bltree_delete_insert_range_scan_many_concurrently.db", 12, HASH_TABLE_ENTRY_CHAIN_LEN*16, bpm, nil)
 
 	keyTotal := 1600000
 	routineNum := 16
@@ -688,7 +688,7 @@ func TestBLTree_deleteInsertRangeScanConcurrently_samehada(t *testing.T) {
 	start := time.Now()
 	for r := 0; r < routineNum; r++ {
 		go func(n int) {
-			bltree := NewBLTree(mgr)
+			bltree := NewBLTree(*mgr)
 
 			rangeScanCheck := func(startKey []byte) {
 				//elemNum, keyArr, _ := bltree.RangeScan(startKey, nil)
@@ -753,7 +753,7 @@ func TestBLTree_deleteInsertRangeScanConcurrently_samehada(t *testing.T) {
 	start = time.Now()
 	for r := 0; r < routineNum; r++ {
 		go func(n int) {
-			bltree := NewBLTree(mgr)
+			bltree := NewBLTree(*mgr)
 			for i := 0; i < keyTotal; i++ {
 				if i%routineNum != n {
 					continue
@@ -788,7 +788,7 @@ func TestBLTree_deleteManyConcurrentlyShuffle_samehada(t *testing.T) {
 
 	dm := disk.NewVirtualDiskManagerImpl("TestBLTree_deleteManyConcurrently_shuffle_samehada.db")
 	bpm := buffer.NewBufferPoolManager(poolSize, dm)
-	mgr := NewBufMgrSamehada("data/bltree_delete_many_shuffle_concurrently.db", 12, HASH_TABLE_ENTRY_CHAIN_LEN*16, bpm, nil)
+	mgr := NewBufMgr("data/bltree_delete_many_shuffle_concurrently.db", 12, HASH_TABLE_ENTRY_CHAIN_LEN*16, bpm, nil)
 
 	keyTotal := 1600000
 	routineNum := 16
@@ -810,7 +810,7 @@ func TestBLTree_deleteManyConcurrentlyShuffle_samehada(t *testing.T) {
 	start := time.Now()
 	for r := 0; r < routineNum; r++ {
 		go func(n int) {
-			bltree := NewBLTree(mgr)
+			bltree := NewBLTree(*mgr)
 			for i := 0; i < keyTotal; i++ {
 				if i%routineNum != n {
 					continue
@@ -850,7 +850,7 @@ func TestBLTree_deleteManyConcurrentlyShuffle_samehada(t *testing.T) {
 	start = time.Now()
 	for r := 0; r < routineNum; r++ {
 		go func(n int) {
-			bltree := NewBLTree(mgr)
+			bltree := NewBLTree(*mgr)
 			for i := 0; i < keyTotal; i++ {
 				if i%routineNum != n {
 					continue
@@ -876,8 +876,8 @@ func TestBLTree_deleteManyConcurrentlyShuffle_samehada(t *testing.T) {
 
 func TestBLTree_restart(t *testing.T) {
 	_ = os.Remove(`data/bltree_restart.db`)
-	mgr := NewBufMgr("data/bltree_restart.db", 13, 48)
-	bltree := NewBLTree(mgr)
+	mgr := NewBufMgr("data/bltree_restart.db", 13, 48, nil, nil)
+	bltree := NewBLTree(*mgr)
 
 	firstNum := uint64(1000)
 
@@ -890,8 +890,8 @@ func TestBLTree_restart(t *testing.T) {
 	}
 
 	mgr.Close()
-	mgr = NewBufMgr("data/bltree_restart.db", 15, 48)
-	bltree = NewBLTree(mgr)
+	mgr = NewBufMgr("data/bltree_restart.db", 15, 48, nil, nil)
+	bltree = NewBLTree(*mgr)
 
 	secondNum := uint64(2000)
 
@@ -924,8 +924,8 @@ func TestBLTree_restart_samehada(t *testing.T) {
 	dm := disk.NewVirtualDiskManagerImpl("TestBLTree_restart_samehada.db")
 	bpm := buffer.NewBufferPoolManager(poolSize, dm)
 
-	mgr := NewBufMgrSamehada("data/bltree_restart_samehada.db", 12, HASH_TABLE_ENTRY_CHAIN_LEN*2, bpm, nil)
-	bltree := NewBLTree(mgr)
+	mgr := NewBufMgr("data/bltree_restart_samehada.db", 12, HASH_TABLE_ENTRY_CHAIN_LEN*2, bpm, nil)
+	bltree := NewBLTree(*mgr)
 
 	firstNum := uint64(100000)
 
@@ -947,25 +947,25 @@ func TestBLTree_restart_samehada(t *testing.T) {
 	}
 
 	// keep page ID mapping info on memory for testing
-	idMappingsBeforeShutdown := bltree.mgr.(*BufMgrSamehadaImpl).pageIdConvMap
+	idMappingsBeforeShutdown := bltree.mgr.pageIdConvMap
 
 	// shutdown BLTree
 	// includes perpetuation of page ID mappings and free page IDs
 	mgr.Close()
 
 	// shutdown SamehadaDB which own parent buffer manager of BufMgr
-	pageZeroShId := mgr.(*BufMgrSamehadaImpl).GetMappedShPageIdOfPageZero()
+	pageZeroShId := mgr.GetMappedShPageIdOfPageZero()
 	bpm.FlushAllPages()
 	//dm.ShutDown()
 
 	//dm = disk.NewDiskManagerImpl("TestBLTree_restart_samehada.db")
 	bpm = buffer.NewBufferPoolManager(poolSize, dm)
-	mgr = NewBufMgrSamehada("data/bltree_restart_samehada.db", 12, 48, bpm, &pageZeroShId)
-	bltree = NewBLTree(mgr)
+	mgr = NewBufMgr("data/bltree_restart_samehada.db", 12, 48, bpm, &pageZeroShId)
+	bltree = NewBLTree(*mgr)
 
 	secondNum := firstNum * 2
 
-	idMappingReloaded := bltree.mgr.(*BufMgrSamehadaImpl).pageIdConvMap
+	idMappingReloaded := bltree.mgr.pageIdConvMap
 
 	idMappingCnt := 0
 	// check reloaded pageID mapping info
@@ -1010,8 +1010,8 @@ func TestBLTree_insert_and_range_scan_samehada(t *testing.T) {
 
 	os.Remove("data/bltree_insert_and_range_scan_samehada.db")
 
-	mgr := NewBufMgrSamehada("TestBLTree_insert_and_range_scan_samehada.db", 12, 20, bpm, nil)
-	bltree := NewBLTree(mgr)
+	mgr := NewBufMgr("TestBLTree_insert_and_range_scan_samehada.db", 12, 20, bpm, nil)
+	bltree := NewBLTree(*mgr)
 
 	keyTotal := 10
 	keys := make([][]byte, keyTotal)

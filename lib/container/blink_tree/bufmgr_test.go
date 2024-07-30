@@ -29,7 +29,7 @@ func TestNewBufMgr(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_ = os.Remove(tt.args.filename)
-			mgr := NewBufMgr(tt.args.filename, tt.args.bits, tt.args.nodeMax)
+			mgr := NewBufMgr(tt.args.filename, tt.args.bits, tt.args.nodeMax, nil, nil)
 			if mgr == nil {
 				t.Errorf("NewBufMgr() failed")
 			}
@@ -70,7 +70,7 @@ func TestBufMgr_poolAudit(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_ = os.Remove(tt.args.name)
-			mgr := NewBufMgr(tt.args.name, tt.args.bits, tt.args.nodeMax)
+			mgr := NewBufMgr(tt.args.name, tt.args.bits, tt.args.nodeMax, nil, nil)
 			if mgr == nil {
 				t.Errorf("NewBufMgr() failed")
 			}
@@ -205,7 +205,7 @@ func TestBufMgr_PinLatch(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_ = os.Remove(tt.filename)
-			mgr := NewBufMgr(tt.filename, 15, 20)
+			mgr := NewBufMgr(tt.filename, 15, 20, nil, nil)
 			if mgr == nil {
 				t.Errorf("NewBufMgr() failed")
 			}
@@ -258,7 +258,7 @@ func TestBufMgr_PinLatch_Twice(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_ = os.Remove(tt.filename)
-			mgr := NewBufMgr(tt.filename, 15, 20)
+			mgr := NewBufMgr(tt.filename, 15, 20, nil, nil)
 			if mgr == nil {
 				t.Errorf("NewBufMgr() failed")
 			}
@@ -310,7 +310,7 @@ func TestBufMgr_PinLatch_ClockWise(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_ = os.Remove(tt.fields.filename)
-			mgr := NewBufMgr(tt.fields.filename, 15, tt.fields.nodeMax)
+			mgr := NewBufMgr(tt.fields.filename, 15, tt.fields.nodeMax, nil, nil)
 			if mgr == nil {
 				t.Errorf("NewBufMgr() failed")
 			}
@@ -368,7 +368,7 @@ func TestBufMgr_UnpinLatch_ClockWise(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_ = os.Remove(tt.fields.filename)
-			mgr := NewBufMgr(tt.fields.filename, 15, tt.fields.nodeMax)
+			mgr := NewBufMgr(tt.fields.filename, 15, tt.fields.nodeMax, nil, nil)
 			if mgr == nil {
 				t.Errorf("NewBufMgr() failed")
 			}
@@ -417,7 +417,7 @@ func TestBufMgr_NewPage(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_ = os.Remove(tt.filename)
-			mgr := NewBufMgr(tt.filename, 15, 20)
+			mgr := NewBufMgr(tt.filename, 15, 20, nil, nil)
 			if mgr == nil {
 				t.Errorf("NewBufMgr() failed")
 			}
